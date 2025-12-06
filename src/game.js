@@ -1,4 +1,4 @@
-import { InputHandler } from './input.js';
+import { InputHandler } from './systems/InputHandler.js';
 import { GameMap } from './map.js';
 import { Player, Enemy, Item, Minion, Particle } from './entities.js';
 import { playerStats } from './state.js';
@@ -6,6 +6,7 @@ import { STATES, COLORS, TILE_SIZE } from './constants.js';
 import { Rect } from './utils.js';
 import { Renderer } from './systems/Renderer.js';
 import { Camera } from './systems/Camera.js';
+import { HUD } from './ui/HUD.js';
 
 export class Game {
     constructor(controlMode) {
@@ -14,12 +15,8 @@ export class Game {
         this.ctx = this.canvas.getContext('2d');
         this.input = new InputHandler(this, controlMode);
 
-        // UI Cache
-        this.hubControls = document.getElementById('hubControls');
-        this.hpBtn = document.getElementById('btn-upgrade-hp');
-        this.manaBtn = document.getElementById('btn-upgrade-mana');
-        this.lastGold = -1;
-        this.lastState = null;
+        // UI
+        this.ui = new HUD(this);
 
         this.state = STATES.HUB;
         this.dungeonLevel = 1;
@@ -223,29 +220,8 @@ export class Game {
     }
 
     update() {
-        // Toggle mobile hub controls efficiently
-        if (this.hubControls) {
-            const isHub = this.state === STATES.HUB && this.controlMode === 'MOBILE';
-
-            // Only toggle display when state changes
-            if (this.state !== this.lastState) {
-                this.hubControls.style.display = isHub ? 'flex' : 'none';
-                this.lastState = this.state;
-            }
-
-            // Only update buttons if in Hub and gold changed
-            if (isHub && this.lastGold !== playerStats.gold) {
-                if (this.hpBtn) {
-                     this.hpBtn.innerText = `UPGRADE HP (50g)`;
-                     this.hpBtn.style.opacity = playerStats.gold >= 50 ? '1' : '0.5';
-                }
-                if (this.manaBtn) {
-                    this.manaBtn.innerText = `UPGRADE MANA (50g)`;
-                    this.manaBtn.style.opacity = playerStats.gold >= 50 ? '1' : '0.5';
-                }
-                this.lastGold = playerStats.gold;
-            }
-        }
+        // UI updates (handles mobile hub controls and button states)
+        if (this.ui && typeof this.ui.update === 'function') this.ui.update();
 
         if (this.state === STATES.DUNGEON) {
             this.player.update(this);
