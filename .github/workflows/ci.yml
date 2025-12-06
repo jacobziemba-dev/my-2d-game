@@ -32,6 +32,24 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Prettier format check
+        run: npm run format:check
+
+      - name: Run tests (with coverage)
+        env:
+          CI: true
+        run: |
+          npm test -- --run --coverage
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage
+            coverage-report
+
       - name: Run tests
         env:
           CI: true
