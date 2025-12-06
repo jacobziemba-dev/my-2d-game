@@ -7,9 +7,17 @@ import { Rect } from './utils.js';
 
 export class Game {
     constructor(controlMode) {
+        this.controlMode = controlMode;
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
         this.input = new InputHandler(this, controlMode);
+
+        // UI Cache
+        this.hubControls = document.getElementById('hubControls');
+        this.hpBtn = document.getElementById('btn-upgrade-hp');
+        this.manaBtn = document.getElementById('btn-upgrade-mana');
+        this.lastGold = -1;
+        this.lastState = null;
 
         this.state = STATES.HUB;
         this.dungeonLevel = 1;
@@ -206,6 +214,30 @@ export class Game {
     }
 
     update() {
+        // Toggle mobile hub controls efficiently
+        if (this.hubControls) {
+            const isHub = this.state === STATES.HUB && this.controlMode === 'MOBILE';
+
+            // Only toggle display when state changes
+            if (this.state !== this.lastState) {
+                this.hubControls.style.display = isHub ? 'flex' : 'none';
+                this.lastState = this.state;
+            }
+
+            // Only update buttons if in Hub and gold changed
+            if (isHub && this.lastGold !== playerStats.gold) {
+                if (this.hpBtn) {
+                     this.hpBtn.innerText = `UPGRADE HP (50g)`;
+                     this.hpBtn.style.opacity = playerStats.gold >= 50 ? '1' : '0.5';
+                }
+                if (this.manaBtn) {
+                    this.manaBtn.innerText = `UPGRADE MANA (50g)`;
+                    this.manaBtn.style.opacity = playerStats.gold >= 50 ? '1' : '0.5';
+                }
+                this.lastGold = playerStats.gold;
+            }
+        }
+
         if (this.state === STATES.DUNGEON) {
             this.player.update(this);
 
@@ -332,22 +364,38 @@ export class Game {
         const cx = this.canvas.width / 2;
         const cy = this.canvas.height / 2;
 
-        this.drawText("THE MANOR", 60, COLORS.GOLD, cx, 100);
-        this.drawText(`Level ${playerStats.level} Summoner`, 28, COLORS.PLAYER, cx, 160);
-        this.drawText(`Gold: ${playerStats.gold}`, 30, COLORS.GOLD, cx, 200);
-        this.drawText(`Floor Record: ${this.dungeonLevel}`, 25, COLORS.WHITE, cx, 240);
+        if (this.controlMode === 'MOBILE') {
+            // Condensed Layout for Mobile
+            this.drawText("THE MANOR", 40, COLORS.GOLD, cx, 60);
+            this.drawText(`Lvl ${playerStats.level} Summoner | Floor ${this.dungeonLevel}`, 20, COLORS.PLAYER, cx, 100);
+            this.drawText(`Gold: ${playerStats.gold}`, 24, COLORS.GOLD, cx, 130);
 
-        const btnY = cy + 50;
-        this.drawText("[ ENTER / TAP ] Start Expedition", 30, COLORS.MINION, cx, btnY);
+            // Start instruction higher up
+            this.drawText("[ TAP ] Start Expedition", 24, COLORS.MINION, cx, cy - 80);
 
-        const hpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
-        this.drawText(`[ H ] Upgrade HP (50g) - Current: ${playerStats.maxHp}`, 22, hpColor, cx, btnY + 60);
+            // Stats info
+            this.drawText(`HP: ${playerStats.maxHp} | Mana: ${playerStats.maxMana}`, 20, COLORS.WHITE, cx, cy - 40);
+            this.drawText(`Minion Dmg: ${playerStats.minionDamage}`, 18, COLORS.MINION_DARK, cx, cy - 10);
 
-        const mpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
-        this.drawText(`[ M ] Upgrade Mana (50g) - Current: ${playerStats.maxMana}`, 22, mpColor, cx, btnY + 100);
+        } else {
+            // Desktop Standard Layout
+            this.drawText("THE MANOR", 60, COLORS.GOLD, cx, 100);
+            this.drawText(`Level ${playerStats.level} Summoner`, 28, COLORS.PLAYER, cx, 160);
+            this.drawText(`Gold: ${playerStats.gold}`, 30, COLORS.GOLD, cx, 200);
+            this.drawText(`Floor Record: ${this.dungeonLevel}`, 25, COLORS.WHITE, cx, 240);
 
-        // Stats info
-        this.drawText(`Minion Damage: ${playerStats.minionDamage}`, 18, COLORS.MINION_DARK, cx, btnY + 160);
+            const btnY = cy + 50;
+            this.drawText("[ ENTER / TAP ] Start Expedition", 30, COLORS.MINION, cx, btnY);
+
+            const hpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
+            this.drawText(`[ H ] Upgrade HP (50g) - Current: ${playerStats.maxHp}`, 22, hpColor, cx, btnY + 60);
+
+            const mpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
+            this.drawText(`[ M ] Upgrade Mana (50g) - Current: ${playerStats.maxMana}`, 22, mpColor, cx, btnY + 100);
+
+            // Stats info
+            this.drawText(`Minion Damage: ${playerStats.minionDamage}`, 18, COLORS.MINION_DARK, cx, btnY + 160);
+        }
     }
 
     drawHUD() {

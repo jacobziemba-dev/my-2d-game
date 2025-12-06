@@ -101,6 +101,30 @@ export class InputHandler {
                 this.summonPressed = false;
             });
         }
+
+        // Upgrade Buttons
+        const hpBtn = document.getElementById('btn-upgrade-hp');
+        const manaBtn = document.getElementById('btn-upgrade-mana');
+
+        if (hpBtn) {
+            hpBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                this.game.handleUpgrade('hp');
+            }, {passive: false});
+            hpBtn.addEventListener('click', (e) => {
+                this.game.handleUpgrade('hp');
+            });
+        }
+
+        if (manaBtn) {
+            manaBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                this.game.handleUpgrade('mana');
+            }, {passive: false});
+            manaBtn.addEventListener('click', (e) => {
+                this.game.handleUpgrade('mana');
+            });
+        }
     }
 
     getAxis() {
