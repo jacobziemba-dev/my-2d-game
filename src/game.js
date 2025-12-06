@@ -100,15 +100,17 @@ export class Game {
         // If spawn is blocked, use corrected room center calculation
         if (!validSpawn && this.rooms.length > 0) {
             const firstRoom = this.rooms[0];
-            const gridCenterX = firstRoom.x + firstRoom.w / 2;
-            const gridCenterY = firstRoom.y + firstRoom.h / 2;
+            const gridCenterX = Math.floor(firstRoom.x + firstRoom.w / 2);
+            const gridCenterY = Math.floor(firstRoom.y + firstRoom.h / 2);
             spawnX = gridCenterX * TILE_SIZE - 15;  // Center 30px player
             spawnY = gridCenterY * TILE_SIZE - 15;
             console.log('Spawn was blocked, using fallback position');
         }
 
         console.log(`Player spawning at: (${spawnX}, ${spawnY}), validSpawn: ${validSpawn}`);
-        console.log(`First room: x=${this.rooms[0].x}, y=${this.rooms[0].y}, w=${this.rooms[0].w}, h=${this.rooms[0].h}`);
+        if (this.rooms.length > 0) {
+            console.log(`First room: x=${this.rooms[0].x}, y=${this.rooms[0].y}, w=${this.rooms[0].w}, h=${this.rooms[0].h}`);
+        }
 
         this.player = new Player(spawnX, spawnY);
         this.entities.push(this.player);
@@ -269,6 +271,12 @@ export class Game {
             // Camera Follow (centered on player)
             this.camera.x = this.player.rect.centerX - this.canvas.width / 2;
             this.camera.y = this.player.rect.centerY - this.canvas.height / 2;
+
+            // Clamp camera to map bounds
+            const mapPixelWidth = this.mapWidth * TILE_SIZE;
+            const mapPixelHeight = this.mapHeight * TILE_SIZE;
+            this.camera.x = Math.max(0, Math.min(this.camera.x, mapPixelWidth - this.canvas.width));
+            this.camera.y = Math.max(0, Math.min(this.camera.y, mapPixelHeight - this.canvas.height));
         }
     }
 

@@ -171,17 +171,17 @@ export class GameMap {
         // Set spawn and boss points (center of rooms, properly calculated)
         if (this.rooms.length > 0) {
             const firstRoom = this.rooms[0];
-            // Calculate grid center first, then convert to pixels, then center the 30x30 player
-            const gridCenterX = firstRoom.x + firstRoom.w / 2;
-            const gridCenterY = firstRoom.y + firstRoom.h / 2;
+            // Calculate grid center first (integer-aligned), then convert to pixels, then center the 30x30 player
+            const gridCenterX = Math.floor(firstRoom.x + firstRoom.w / 2);
+            const gridCenterY = Math.floor(firstRoom.y + firstRoom.h / 2);
             this.spawnPoint = {
                 x: gridCenterX * TILE_SIZE - 15,  // Center 30px player (30/2 = 15)
                 y: gridCenterY * TILE_SIZE - 15
             };
 
             const lastRoom = this.rooms[this.rooms.length - 1];
-            const bossCenterX = lastRoom.x + lastRoom.w / 2;
-            const bossCenterY = lastRoom.y + lastRoom.h / 2;
+            const bossCenterX = Math.floor(lastRoom.x + lastRoom.w / 2);
+            const bossCenterY = Math.floor(lastRoom.y + lastRoom.h / 2);
             this.bossPoint = {
                 x: bossCenterX * TILE_SIZE - 30,  // Center 60px boss (60/2 = 30)
                 y: bossCenterY * TILE_SIZE - 30
