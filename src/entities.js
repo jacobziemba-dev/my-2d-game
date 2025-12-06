@@ -286,8 +286,8 @@ export class Minion extends Entity {
         // Animate
         if (dx !== 0 || dy !== 0) {
             this.frameTimer++;
-            if (this.frameTimer > 10) {
-                this.frame = (this.frame + 1) % 4; // Using idle/walk logic
+            if (this.frameTimer > MINION_ANIM_SPEED) {
+                this.frame = (this.frame + 1) % MINION_FRAME_COUNT; // Using idle/walk logic
                 this.frameTimer = 0;
             }
         }
