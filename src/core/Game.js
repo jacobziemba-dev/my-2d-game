@@ -207,17 +207,15 @@ export class Game {
       this.entities = this.entities.filter(e => !e.dead);
       this.items = this.items.filter(i => !i.picked);
 
-      // Update Minions
-      this.minions.forEach(m => m.update(this));
-
-      // Update Enemies via AI system
+      // Update Minions and Enemies via AI system
       try {
         if (this.ai && typeof this.ai.updateAll === 'function') {
-          this.ai.updateAll(this.enemies);
+          // updater functions live on the AI instance; pass them to updateAll
+          this.ai.updateAll(this.minions, this.ai.minionBehavior);
+          this.ai.updateAll(this.enemies, this.ai.enemyBehavior);
         } else {
-          this.enemies.forEach(e => {
-            if (typeof e.update === 'function') e.update(this);
-          });
+          this.minions.forEach(m => { if (typeof m.update === 'function') m.update(this); });
+          this.enemies.forEach(e => { if (typeof e.update === 'function') e.update(this); });
         }
       } catch (err) {
         console.error('Error in AI update:', err);
