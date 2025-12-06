@@ -214,18 +214,11 @@ function getDistance(obj1, obj2) {
     return Math.hypot(dx, dy);
 }
 
-// Isometric conversion functions
-function toIso(x, y) {
+// Top-down rendering (no conversion needed)
+function toScreen(x, y, camera, canvas) {
     return {
-        x: (x - y) * 0.866,
-        y: (x + y) * 0.5
-    };
-}
-
-function toCartesian(isoX, isoY) {
-    return {
-        x: (isoX / 0.866 + isoY) / 2,
-        y: (isoY - isoX / 0.866) / 2
+        x: x - camera.x,
+        y: y - camera.y
     };
 }
 
@@ -401,55 +394,21 @@ class Entity {
     }
 
     draw(ctx, camera) {
-        const iso = toIso(this.rect.x - camera.x, this.rect.y - camera.y);
-        const screenX = iso.x + ctx.canvas.width / 2;
-        const screenY = iso.y + ctx.canvas.height / 2;
-
-        const isoWidth = this.rect.w * 0.5;
-        const isoHeight = this.rect.h * 0.25;
-        const entityHeight = this.rect.h * 0.6;
+        const screenX = this.rect.x - camera.x;
+        const screenY = this.rect.y - camera.y;
 
         // Draw shadow
         ctx.fillStyle = COLORS.SHADOW;
-        ctx.beginPath();
-        ctx.ellipse(screenX, screenY + isoHeight, isoWidth, isoHeight * 0.5, 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(screenX + 2, screenY + 2, this.rect.w, this.rect.h);
 
-        // Draw entity body (diamond/rhombus shape with height)
-        const darkColor = this.color === COLORS.PLAYER ? COLORS.PLAYER_DARK :
-                         this.color === COLORS.MINION ? COLORS.MINION_DARK :
-                         this.color === COLORS.ENEMY ? COLORS.ENEMY_DARK :
-                         COLORS.BOSS;
-
-        // Front face
+        // Draw entity body
         ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.moveTo(screenX, screenY - entityHeight);
-        ctx.lineTo(screenX + isoWidth, screenY - entityHeight + isoHeight);
-        ctx.lineTo(screenX, screenY - entityHeight + isoHeight * 2);
-        ctx.lineTo(screenX - isoWidth, screenY - entityHeight + isoHeight);
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(screenX, screenY, this.rect.w, this.rect.h);
 
-        // Left side
-        ctx.fillStyle = darkColor;
-        ctx.beginPath();
-        ctx.moveTo(screenX - isoWidth, screenY - entityHeight + isoHeight);
-        ctx.lineTo(screenX - isoWidth, screenY + isoHeight);
-        ctx.lineTo(screenX, screenY + isoHeight * 2);
-        ctx.lineTo(screenX, screenY - entityHeight + isoHeight * 2);
-        ctx.closePath();
-        ctx.fill();
-
-        // Right side
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.moveTo(screenX + isoWidth, screenY - entityHeight + isoHeight);
-        ctx.lineTo(screenX + isoWidth, screenY + isoHeight);
-        ctx.lineTo(screenX, screenY + isoHeight * 2);
-        ctx.lineTo(screenX, screenY - entityHeight + isoHeight * 2);
-        ctx.closePath();
-        ctx.fill();
+        // Draw border
+        ctx.strokeStyle = COLORS.BORDER;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(screenX, screenY, this.rect.w, this.rect.h);
 
         this.drawHealth(ctx, camera);
     }
@@ -701,19 +660,20 @@ class Item {
     draw(ctx, camera) {
         if (this.picked) return;
 
-        const iso = toIso(this.rect.x - camera.x, this.rect.y - camera.y);
-        const screenX = iso.x + ctx.canvas.width / 2;
-        const screenY = iso.y + ctx.canvas.height / 2;
+        const screenX = this.rect.x - camera.x;
+        const screenY = this.rect.y - camera.y;
 
-        const size = 8;
+        const size = 10;
+        const centerX = screenX + this.rect.w / 2;
+        const centerY = screenY + this.rect.h / 2;
 
         // Draw item as a glowing diamond
         ctx.fillStyle = this.color;
         ctx.beginPath();
-        ctx.moveTo(screenX, screenY - size);
-        ctx.lineTo(screenX + size, screenY);
-        ctx.lineTo(screenX, screenY + size);
-        ctx.lineTo(screenX - size, screenY);
+        ctx.moveTo(centerX, centerY - size);
+        ctx.lineTo(centerX + size, centerY);
+        ctx.lineTo(centerX, centerY + size);
+        ctx.lineTo(centerX - size, centerY);
         ctx.closePath();
         ctx.fill();
 
@@ -827,51 +787,20 @@ class Wall {
     }
 
     draw(ctx, camera) {
-        const iso = toIso(this.rect.x - camera.x, this.rect.y - camera.y);
-        const screenX = iso.x + ctx.canvas.width / 2;
-        const screenY = iso.y + ctx.canvas.height / 2;
+        const screenX = this.rect.x - camera.x;
+        const screenY = this.rect.y - camera.y;
 
         // Simple culling
         if (screenX < -100 || screenX > ctx.canvas.width + 100 || screenY < -100 || screenY > ctx.canvas.height + 100) return;
 
-        const isoWidth = TILE_SIZE * 0.866;
-        const isoHeight = TILE_SIZE * 0.5;
-        const wallHeight = 20;
-
-        // Draw wall top (diamond shape)
-        ctx.fillStyle = COLORS.WALL_TOP;
-        ctx.beginPath();
-        ctx.moveTo(screenX, screenY - wallHeight);
-        ctx.lineTo(screenX + isoWidth, screenY - wallHeight + isoHeight);
-        ctx.lineTo(screenX, screenY - wallHeight + isoHeight * 2);
-        ctx.lineTo(screenX - isoWidth, screenY - wallHeight + isoHeight);
-        ctx.closePath();
-        ctx.fill();
-
-        // Draw left side
-        ctx.fillStyle = COLORS.WALL_SIDE;
-        ctx.beginPath();
-        ctx.moveTo(screenX - isoWidth, screenY - wallHeight + isoHeight);
-        ctx.lineTo(screenX - isoWidth, screenY + isoHeight);
-        ctx.lineTo(screenX, screenY + isoHeight * 2);
-        ctx.lineTo(screenX, screenY - wallHeight + isoHeight * 2);
-        ctx.closePath();
-        ctx.fill();
-
-        // Draw right side
+        // Draw wall
         ctx.fillStyle = COLORS.WALL;
-        ctx.beginPath();
-        ctx.moveTo(screenX + isoWidth, screenY - wallHeight + isoHeight);
-        ctx.lineTo(screenX + isoWidth, screenY + isoHeight);
-        ctx.lineTo(screenX, screenY + isoHeight * 2);
-        ctx.lineTo(screenX, screenY - wallHeight + isoHeight * 2);
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
 
-        // Border
+        // Draw border
         ctx.strokeStyle = COLORS.BORDER;
         ctx.lineWidth = 1;
-        ctx.stroke();
+        ctx.strokeRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
 }
 
@@ -1245,12 +1174,9 @@ class Game {
                 playerStats.gold = 0; // Penalty
             }
 
-            // Camera Follow with smooth lerp
-            const targetX = -this.player.rect.centerX + this.canvas.width / 2;
-            const targetY = -this.player.rect.centerY + this.canvas.height / 2;
-
-            this.camera.x = -targetX;
-            this.camera.y = -targetY;
+            // Camera Follow (centered on player)
+            this.camera.x = this.player.rect.centerX - this.canvas.width / 2;
+            this.camera.y = this.player.rect.centerY - this.canvas.height / 2;
         }
     }
 
