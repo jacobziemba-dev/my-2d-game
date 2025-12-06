@@ -27,11 +27,6 @@ jobs:
       - name: Build with Vite
         run: npm run build
 
-      # Optional: run Claude Code Action. Requires `ANTHROPICS_API_KEY` set in repository secrets.
-      - name: Claude Code Action Official
-        uses: anthropics/claude-code-action@v1
-        env:
-          ANTHROPICS_API_KEY: ${{ secrets.ANTHROPICS_API_KEY }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
