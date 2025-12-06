@@ -946,18 +946,18 @@ class GameMap {
             }
         }
 
-        // Set spawn and boss points
+        // Set spawn and boss points (center of rooms, away from walls)
         if (this.rooms.length > 0) {
             const firstRoom = this.rooms[0];
             this.spawnPoint = {
-                x: Math.floor(firstRoom.centerX) * TILE_SIZE,
-                y: Math.floor(firstRoom.centerY) * TILE_SIZE
+                x: (firstRoom.x + Math.floor(firstRoom.w / 2)) * TILE_SIZE + TILE_SIZE / 2,
+                y: (firstRoom.y + Math.floor(firstRoom.h / 2)) * TILE_SIZE + TILE_SIZE / 2
             };
 
             const lastRoom = this.rooms[this.rooms.length - 1];
             this.bossPoint = {
-                x: Math.floor(lastRoom.centerX) * TILE_SIZE,
-                y: Math.floor(lastRoom.centerY) * TILE_SIZE
+                x: (lastRoom.x + Math.floor(lastRoom.w / 2)) * TILE_SIZE + TILE_SIZE / 2,
+                y: (lastRoom.y + Math.floor(lastRoom.h / 2)) * TILE_SIZE + TILE_SIZE / 2
             };
         }
 
@@ -1061,7 +1061,28 @@ class Game {
         this.grid = map.grid;
         this.rooms = map.rooms;
 
-        this.player = new Player(map.spawnPoint.x, map.spawnPoint.y);
+        // Ensure player spawns in a valid location
+        let spawnX = map.spawnPoint.x;
+        let spawnY = map.spawnPoint.y;
+
+        // Verify spawn point is not in a wall
+        const playerTestRect = new Rect(spawnX, spawnY, 30, 30);
+        let validSpawn = true;
+        for (let wall of this.walls) {
+            if (playerTestRect.colliderect(wall.rect)) {
+                validSpawn = false;
+                break;
+            }
+        }
+
+        // If spawn is blocked, use room center directly
+        if (!validSpawn && this.rooms.length > 0) {
+            const firstRoom = this.rooms[0];
+            spawnX = (firstRoom.x + firstRoom.w / 2) * TILE_SIZE;
+            spawnY = (firstRoom.y + firstRoom.h / 2) * TILE_SIZE;
+        }
+
+        this.player = new Player(spawnX, spawnY);
         this.entities.push(this.player);
 
         // Boss in final room
