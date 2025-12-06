@@ -71,15 +71,14 @@ export class InputHandler {
                 this.joystickVector.y = ky / 50;
             }, {passive: false});
 
-            const resetJoystick = (e) => {
-                e.preventDefault();
+            const resetJoystick = () => {
                 this.touchActive = false;
                 this.joystickVector = { x: 0, y: 0 };
                 knob.style.transform = `translate(-50%, -50%)`;
             };
 
-            joystick.addEventListener('touchend', resetJoystick, {passive: false});
-            joystick.addEventListener('touchcancel', resetJoystick, {passive: false});
+            joystick.addEventListener('touchend', resetJoystick);
+            joystick.addEventListener('touchcancel', resetJoystick);
         }
 
         // Summon Button - only attach listeners if element exists
@@ -93,10 +92,9 @@ export class InputHandler {
                 if(this.game.state === STATES.GAMEOVER || this.game.state === STATES.VICTORY) this.game.handleRestart();
             }, {passive: false});
 
-            summonBtn.addEventListener('touchend', (e) => {
-                e.preventDefault();
+            summonBtn.addEventListener('touchend', () => {
                 this.summonPressed = false;
-            }, {passive: false});
+            });
         }
     }
 
