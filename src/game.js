@@ -4,6 +4,8 @@ import { Player, Enemy, Item, Minion, Particle } from './entities.js';
 import { playerStats } from './state.js';
 import { STATES, COLORS, TILE_SIZE } from './constants.js';
 import { Rect } from './utils.js';
+import { Renderer } from './systems/Renderer.js';
+import { Camera } from './systems/Camera.js';
 
 export class Game {
     constructor(controlMode) {
@@ -32,10 +34,13 @@ export class Game {
         this.items = [];
         this.player = null;
 
-        this.camera = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+        this.camera = new Camera(window.innerWidth, window.innerHeight);
 
         window.addEventListener('resize', () => this.resize());
         this.resize();
+
+        // Renderer
+        this.renderer = new Renderer(this);
 
         this.loop = this.loop.bind(this);
         requestAnimationFrame(this.loop);
@@ -44,8 +49,12 @@ export class Game {
     resize() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
-        this.camera.w = this.canvas.width;
-        this.camera.h = this.canvas.height;
+        if (this.camera && typeof this.camera.setSize === 'function') {
+            this.camera.setSize(this.canvas.width, this.canvas.height);
+        } else {
+            this.camera.w = this.canvas.width;
+            this.camera.h = this.canvas.height;
+        }
     }
 
     levelUp() {
@@ -300,162 +309,24 @@ export class Game {
                 playerStats.gold = 0; // Penalty
             }
 
-            // Camera Follow (centered on player)
-            this.camera.x = this.player.rect.centerX - this.canvas.width / 2;
-            this.camera.y = this.player.rect.centerY - this.canvas.height / 2;
-
-            // Clamp camera to map bounds
+            // Camera update (follow + clamp)
             const mapPixelWidth = this.mapWidth * TILE_SIZE;
             const mapPixelHeight = this.mapHeight * TILE_SIZE;
-            this.camera.x = Math.max(0, Math.min(this.camera.x, mapPixelWidth - this.canvas.width));
-            this.camera.y = Math.max(0, Math.min(this.camera.y, mapPixelHeight - this.canvas.height));
+            if (this.camera && typeof this.camera.update === 'function') {
+                this.camera.update(this.player, this.canvas.width, this.canvas.height, mapPixelWidth, mapPixelHeight);
+            } else {
+                this.camera.x = this.player.rect.centerX - this.canvas.width / 2;
+                this.camera.y = this.player.rect.centerY - this.canvas.height / 2;
+                this.camera.x = Math.max(0, Math.min(this.camera.x, mapPixelWidth - this.canvas.width));
+                this.camera.y = Math.max(0, Math.min(this.camera.y, mapPixelHeight - this.canvas.height));
+            }
         }
     }
-
-    draw() {
-        // Clear
-        this.ctx.fillStyle = COLORS.BG;
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        if (this.state === STATES.HUB) {
-            this.drawHub();
-        } else if (this.state === STATES.DUNGEON) {
-            this.drawDungeon();
-            this.drawHUD();
-        } else if (this.state === STATES.GAMEOVER) {
-            this.drawDungeon(); // Show background still
-            this.drawOverlay("YOU DIED", COLORS.ENEMY, "Press R or Tap Button to Return");
-        } else if (this.state === STATES.VICTORY) {
-            this.drawDungeon();
-            this.drawOverlay("FLOOR CLEARED!", COLORS.MINION, "Press R or Tap Button to Rest");
-        }
-    }
-
-    drawDungeon() {
-        // Fill Visible Area with Floor
-        this.ctx.fillStyle = COLORS.FLOOR;
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Draw Walls
-        for (let wall of this.walls) {
-            wall.draw(this.ctx, this.camera);
-        }
-
-        // Draw Items
-        for (let item of this.items) {
-            item.draw(this.ctx, this.camera);
-        }
-
-        // Sort entities by Y position for proper depth
-        const sortedEntities = [...this.entities].sort((a, b) => a.rect.y - b.rect.y);
-
-        // Draw Entities
-        for (let ent of sortedEntities) {
-            ent.draw(this.ctx, this.camera);
-        }
-
-        // Draw Particles
-        for (let p of this.particles) {
-            p.draw(this.ctx, this.camera);
-        }
-    }
-
-    drawHub() {
-        const cx = this.canvas.width / 2;
-        const cy = this.canvas.height / 2;
-
-        if (this.controlMode === 'MOBILE') {
-            // Condensed Layout for Mobile
-            this.drawText("THE MANOR", 40, COLORS.GOLD, cx, 60);
-            this.drawText(`Lvl ${playerStats.level} Summoner | Floor ${this.dungeonLevel}`, 20, COLORS.PLAYER, cx, 100);
-            this.drawText(`Gold: ${playerStats.gold}`, 24, COLORS.GOLD, cx, 130);
-
-            // Start instruction higher up
-            this.drawText("[ TAP ] Start Expedition", 24, COLORS.MINION, cx, cy - 80);
-
-            // Stats info
-            this.drawText(`HP: ${playerStats.maxHp} | Mana: ${playerStats.maxMana}`, 20, COLORS.WHITE, cx, cy - 40);
-            this.drawText(`Minion Dmg: ${playerStats.minionDamage}`, 18, COLORS.MINION_DARK, cx, cy - 10);
-
-        } else {
-            // Desktop Standard Layout
-            this.drawText("THE MANOR", 60, COLORS.GOLD, cx, 100);
-            this.drawText(`Level ${playerStats.level} Summoner`, 28, COLORS.PLAYER, cx, 160);
-            this.drawText(`Gold: ${playerStats.gold}`, 30, COLORS.GOLD, cx, 200);
-            this.drawText(`Floor Record: ${this.dungeonLevel}`, 25, COLORS.WHITE, cx, 240);
-
-            const btnY = cy + 50;
-            this.drawText("[ ENTER / TAP ] Start Expedition", 30, COLORS.MINION, cx, btnY);
-
-            const hpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
-            this.drawText(`[ H ] Upgrade HP (50g) - Current: ${playerStats.maxHp}`, 22, hpColor, cx, btnY + 60);
-
-            const mpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
-            this.drawText(`[ M ] Upgrade Mana (50g) - Current: ${playerStats.maxMana}`, 22, mpColor, cx, btnY + 100);
-
-            // Stats info
-            this.drawText(`Minion Damage: ${playerStats.minionDamage}`, 18, COLORS.MINION_DARK, cx, btnY + 160);
-        }
-    }
-
-    drawHUD() {
-        // HP Bar
-        this.ctx.fillStyle = COLORS.WALL;
-        this.ctx.fillRect(20, 20, 200, 20);
-        const hpPct = Math.max(0, this.player.hp / playerStats.maxHp);
-        this.ctx.fillStyle = COLORS.MINION;
-        this.ctx.fillRect(20, 20, 200 * hpPct, 20);
-        this.drawText(`${Math.floor(this.player.hp)}/${playerStats.maxHp} HP`, 16, COLORS.WHITE, 120, 36);
-
-        // Mana Bar
-        this.ctx.fillStyle = COLORS.WALL;
-        this.ctx.fillRect(20, 50, 200, 20);
-        const mpPct = Math.max(0, this.player.mana / playerStats.maxMana);
-        this.ctx.fillStyle = COLORS.PLAYER;
-        this.ctx.fillRect(20, 50, 200 * mpPct, 20);
-        this.drawText(`${Math.floor(this.player.mana)}/${playerStats.maxMana} MP`, 16, COLORS.WHITE, 120, 66);
-
-        // XP Bar
-        this.ctx.fillStyle = COLORS.WALL;
-        this.ctx.fillRect(20, 80, 200, 15);
-        const xpPct = Math.max(0, playerStats.xp / playerStats.xpToNext);
-        this.ctx.fillStyle = COLORS.GOLD;
-        this.ctx.fillRect(20, 80, 200 * xpPct, 15);
-        this.ctx.textAlign = 'left';
-        this.ctx.fillStyle = COLORS.WHITE;
-        this.ctx.font = 'bold 12px Arial';
-        this.ctx.fillText(`Level ${playerStats.level} - ${playerStats.xp}/${playerStats.xpToNext} XP`, 25, 92);
-
-        // Stats (top right)
-        this.ctx.textAlign = 'center';
-        this.drawText(`Floor ${this.dungeonLevel}`, 24, COLORS.WHITE, this.canvas.width - 80, 30);
-        this.drawText(`Gold: ${playerStats.gold}`, 20, COLORS.GOLD, this.canvas.width - 80, 60);
-
-        // Enemy count
-        this.drawText(`Enemies: ${this.enemies.length}`, 18, COLORS.ENEMY, this.canvas.width - 80, 85);
-    }
-
-    drawOverlay(title, color, sub) {
-        this.ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        const cx = this.canvas.width / 2;
-        const cy = this.canvas.height / 2;
-
-        this.drawText(title, 50, color, cx, cy - 40);
-        this.drawText(sub, 24, COLORS.WHITE, cx, cy + 40);
-    }
-
-    drawText(text, size, color, x, y) {
-        this.ctx.fillStyle = color;
-        this.ctx.font = `bold ${size}px Arial`;
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(text, x, y);
-    }
-
     loop() {
         this.update();
-        this.draw();
+        this.renderer.draw();
         requestAnimationFrame(this.loop);
     }
+
+    // The drawing responsibilities were moved to `src/systems/Renderer.js`.
 }
