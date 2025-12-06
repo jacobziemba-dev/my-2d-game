@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Summoner's Estate - Top-Down Version</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="control-selection-overlay">
+        <div class="selection-panel">
+            <h1 class="pixel-font">SELECT CONTROLS</h1>
+            <div class="control-options">
+                <button class="control-btn" id="btn-desktop" data-mode="DESKTOP">
+                    <span class="icon">⌨️🖱️</span>
+                    <span class="label">DESKTOP</span>
+                </button>
+                <button class="control-btn" id="btn-mobile" data-mode="MOBILE">
+                    <span class="icon">📱👆</span>
+                    <span class="label">MOBILE</span>
+                </button>
+            </div>
+            <button id="btn-confirm" disabled>CONFIRM</button>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="desktop-hint">WASD to Move | SPACE to Summon | Mouse to Navigate Menu</div>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div class="controls" id="mobileControls">
+        <div class="joystick-zone" id="joystick">
+            <div class="joystick-knob" id="knob"></div>
+        </div>
+        <div class="action-btn" id="summonBtn">SUMMON</div>
+
+        <div id="hubControls" style="display: none;">
+            <button class="upgrade-btn" id="btn-upgrade-hp">UPGRADE HP</button>
+            <button class="upgrade-btn" id="btn-upgrade-mana">UPGRADE MANA</button>
+        </div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
