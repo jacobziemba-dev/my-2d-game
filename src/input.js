@@ -2,45 +2,50 @@
 import { STATES } from './constants.js';
 
 export class InputHandler {
-    constructor(game) {
+    constructor(game, controlMode) {
         this.game = game; // Store game reference if needed, though mostly using internal state
         this.keys = {};
         this.touchActive = false;
         this.joystickVector = { x: 0, y: 0 };
         this.summonPressed = false;
 
-        window.addEventListener('keydown', (e) => {
-            this.keys[e.code] = true;
-            // Prevent default browser actions for movement keys
-            if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-                e.preventDefault();
-            }
-        });
-        window.addEventListener('keyup', (e) => {
-            this.keys[e.code] = false;
-            // Handle menu toggles
-            if (e.code === 'KeyR') this.game.handleRestart();
-            if (e.code === 'KeyH') this.game.handleUpgrade('hp');
-            if (e.code === 'KeyM') this.game.handleUpgrade('mana');
-            if (e.code === 'Enter') this.game.handleStart();
-        });
+        // Desktop Controls
+        if (controlMode !== 'MOBILE') {
+            window.addEventListener('keydown', (e) => {
+                this.keys[e.code] = true;
+                // Prevent default browser actions for movement keys
+                if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+                    e.preventDefault();
+                }
+            });
+            window.addEventListener('keyup', (e) => {
+                this.keys[e.code] = false;
+                // Handle menu toggles
+                if (e.code === 'KeyR') this.game.handleRestart();
+                if (e.code === 'KeyH') this.game.handleUpgrade('hp');
+                if (e.code === 'KeyM') this.game.handleUpgrade('mana');
+                if (e.code === 'Enter') this.game.handleStart();
+            });
+        }
 
         // Touch Setup
         const joystick = document.getElementById('joystick');
         const knob = document.getElementById('knob');
         const summonBtn = document.getElementById('summonBtn');
         const mobileControls = document.getElementById('mobileControls');
+        const desktopHint = document.getElementById('desktop-hint');
 
-        // Detect touch device (use cached mobileControls element)
-        window.addEventListener('touchstart', function onFirstTouch() {
+        // Configure visibility based on mode
+        if (controlMode === 'MOBILE') {
             if (mobileControls) mobileControls.style.display = 'block';
-            const desktopHint = document.getElementById('desktop-hint');
             if (desktopHint) desktopHint.style.display = 'none';
-            window.removeEventListener('touchstart', onFirstTouch, false);
-        }, false);
+        } else {
+            if (mobileControls) mobileControls.style.display = 'none';
+            if (desktopHint) desktopHint.style.display = 'block';
+        }
 
         // Joystick Logic - only attach listeners if elements exist
-        if (joystick && knob) {
+        if (joystick && knob && controlMode === 'MOBILE') {
             let joyStartX = 0, joyStartY = 0;
 
             joystick.addEventListener('touchstart', (e) => {

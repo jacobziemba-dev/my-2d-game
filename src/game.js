@@ -6,10 +6,10 @@ import { STATES, COLORS, TILE_SIZE } from './constants.js';
 import { Rect } from './utils.js';
 
 export class Game {
-    constructor() {
+    constructor(controlMode) {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
-        this.input = new InputHandler(this);
+        this.input = new InputHandler(this, controlMode);
 
         this.state = STATES.HUB;
         this.dungeonLevel = 1;
