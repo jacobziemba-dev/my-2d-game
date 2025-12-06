@@ -2,7 +2,7 @@ import { Rect, getDistance } from './utils.js';
 import { COLORS } from './constants.js';
 import { playerStats } from './state.js';
 
-const TILE_SIZE = 48; // Sprite size
+const SPRITE_SIZE = 48; // Sprite size
 
 export class Particle {
     constructor(x, y, color) {
