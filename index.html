@@ -2,19 +2,971 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My 2D Game</title>
-    <link rel="stylesheet" href="styles.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Summoner's Estate</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            touch-action: none; /* Prevent browser zooming/scrolling */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        /* Mobile Controls */
+        .controls {
+            pointer-events: auto;
+            display: none; /* Hidden on desktop by default, shown via JS if touch detected */
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+        .joystick-zone {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 150px;
+            height: 150px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        .joystick-knob {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 50px;
+            height: 50px;
+            background: rgba(52, 152, 219, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .action-btn {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            width: 80px;
+            height: 80px;
+            background: rgba(46, 204, 113, 0.5);
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            user-select: none;
+        }
+        .action-btn:active {
+            background: rgba(46, 204, 113, 0.8);
+        }
+        /* Desktop Instructions */
+        #desktop-hint {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 14px;
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
-    <div class="game-container">
-        <h1>My 2D Game</h1>
-        <canvas id="gameCanvas" width="800" height="600"></canvas>
-        <div class="controls">
-            <p>Use Arrow Keys or WASD to move</p>
-            <p>Press SPACE to jump</p>
-        </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="desktop-hint">WASD to Move | SPACE to Summon | Mouse to Navigate Menu</div>
     </div>
-    <script src="game.js"></script>
+
+    <!-- Mobile Controls -->
+    <div class="controls" id="mobileControls">
+        <div class="joystick-zone" id="joystick">
+            <div class="joystick-knob" id="knob"></div>
+        </div>
+        <div class="action-btn" id="summonBtn">SUMMON</div>
+    </div>
+
+<script>
+/**
+ * Summoner Roguelike Web Port
+ * Logic adapted from Python Pygame version.
+ */
+
+// --- Constants ---
+const TILE_SIZE = 40;
+const FPS = 60;
+
+const COLORS = {
+    BG: '#0d0d0d',
+    FLOOR: '#2a1f1a',
+    FLOOR_DARK: '#1a1410',
+    WALL: '#3d3d3d',
+    WALL_TOP: '#4a4a4a',
+    WALL_SIDE: '#2d2d2d',
+    BORDER: '#111111',
+    PLAYER: '#6b4ec4',
+    PLAYER_DARK: '#5a3fb3',
+    MINION: '#e74c3c',
+    MINION_DARK: '#c0392b',
+    ENEMY: '#8b8b8b',
+    ENEMY_DARK: '#6a6a6a',
+    BOSS: '#9b59b6',
+    GOLD: '#f1c40f',
+    WHITE: '#ffffff',
+    SHADOW: 'rgba(0, 0, 0, 0.4)',
+    UI_BG: 'rgba(0, 0, 0, 0.8)'
+};
+
+const STATES = {
+    HUB: 'hub',
+    DUNGEON: 'dungeon',
+    GAMEOVER: 'gameover',
+    VICTORY: 'victory'
+};
+
+// Persistent Data
+const playerStats = {
+    maxHp: 100,
+    maxMana: 100,
+    manaRegen: 0.2,
+    gold: 0,
+    level: 1,
+    xp: 0,
+    minionCost: 20
+};
+
+// --- Math & Helper Classes ---
+
+class Rect {
+    constructor(x, y, w, h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+    }
+
+    get left() { return this.x; }
+    get right() { return this.x + this.w; }
+    get top() { return this.y; }
+    get bottom() { return this.y + this.h; }
+
+    get centerX() { return this.x + this.w / 2; }
+    get centerY() { return this.y + this.h / 2; }
+
+    colliderect(other) {
+        return this.x < other.x + other.w &&
+               this.x + this.w > other.x &&
+               this.y < other.y + other.h &&
+               this.y + this.h > other.y;
+    }
+}
+
+function getDistance(obj1, obj2) {
+    const dx = obj1.rect.centerX - obj2.rect.centerX;
+    const dy = obj1.rect.centerY - obj2.rect.centerY;
+    return Math.hypot(dx, dy);
+}
+
+// Isometric conversion functions
+function toIso(x, y) {
+    return {
+        x: (x - y) * 0.866,
+        y: (x + y) * 0.5
+    };
+}
+
+function toCartesian(isoX, isoY) {
+    return {
+        x: (isoX / 0.866 + isoY) / 2,
+        y: (isoY - isoX / 0.866) / 2
+    };
+}
+
+// --- Input Handling ---
+
+class InputHandler {
+    constructor() {
+        this.keys = {};
+        this.touchActive = false;
+        this.joystickVector = { x: 0, y: 0 };
+        this.summonPressed = false;
+
+        window.addEventListener('keydown', (e) => this.keys[e.code] = true);
+        window.addEventListener('keyup', (e) => {
+            this.keys[e.code] = false;
+            // Handle menu toggles
+            if (e.code === 'KeyR') game.handleRestart();
+            if (e.code === 'KeyH') game.handleUpgrade('hp');
+            if (e.code === 'KeyM') game.handleUpgrade('mana');
+            if (e.code === 'Enter') game.handleStart();
+        });
+
+        // Touch Setup
+        const joystick = document.getElementById('joystick');
+        const knob = document.getElementById('knob');
+        const summonBtn = document.getElementById('summonBtn');
+        const mobileControls = document.getElementById('mobileControls');
+
+        // Detect touch device
+        window.addEventListener('touchstart', function onFirstTouch() {
+            document.getElementById('mobileControls').style.display = 'block';
+            document.getElementById('desktop-hint').style.display = 'none';
+            window.removeEventListener('touchstart', onFirstTouch, false);
+        }, false);
+
+        // Joystick Logic
+        let joyStartX = 0, joyStartY = 0;
+
+        joystick.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.changedTouches[0];
+            joyStartX = touch.clientX;
+            joyStartY = touch.clientY;
+            this.touchActive = true;
+        }, {passive: false});
+
+        joystick.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!this.touchActive) return;
+            const touch = e.changedTouches[0];
+            const dx = touch.clientX - joyStartX;
+            const dy = touch.clientY - joyStartY;
+
+            const dist = Math.min(50, Math.hypot(dx, dy));
+            const angle = Math.atan2(dy, dx);
+
+            const kx = Math.cos(angle) * dist;
+            const ky = Math.sin(angle) * dist;
+
+            knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+
+            // Normalize output -1 to 1
+            this.joystickVector.x = kx / 50;
+            this.joystickVector.y = ky / 50;
+        }, {passive: false});
+
+        const resetJoystick = (e) => {
+            e.preventDefault();
+            this.touchActive = false;
+            this.joystickVector = { x: 0, y: 0 };
+            knob.style.transform = `translate(-50%, -50%)`;
+        };
+
+        joystick.addEventListener('touchend', resetJoystick);
+        joystick.addEventListener('touchcancel', resetJoystick);
+
+        // Summon Button
+        summonBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.summonPressed = true;
+
+            // Map tap to interactions in menus
+            if(game.state === STATES.HUB) game.handleStart();
+            if(game.state === STATES.GAMEOVER || game.state === STATES.VICTORY) game.handleRestart();
+        }, {passive: false});
+
+        summonBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.summonPressed = false;
+        });
+    }
+
+    getAxis() {
+        let dx = 0, dy = 0;
+        if (this.keys['KeyW'] || this.keys['ArrowUp']) dy = -1;
+        if (this.keys['KeyS'] || this.keys['ArrowDown']) dy = 1;
+        if (this.keys['KeyA'] || this.keys['ArrowLeft']) dx = -1;
+        if (this.keys['KeyD'] || this.keys['ArrowRight']) dx = 1;
+
+        // Overlay touch
+        if (Math.abs(this.joystickVector.x) > 0.1) dx = this.joystickVector.x;
+        if (Math.abs(this.joystickVector.y) > 0.1) dy = this.joystickVector.y;
+
+        return { dx, dy };
+    }
+}
+
+// --- Game Entities ---
+
+class Particle {
+    constructor(x, y, color) {
+        this.x = x + 15;
+        this.y = y + 15;
+        this.vx = (Math.random() - 0.5) * 5;
+        this.vy = (Math.random() - 0.5) * 5;
+        this.life = 1.0;
+        this.color = color;
+        this.rect = new Rect(x, y, 4, 4);
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= 0.05;
+        this.rect.x = this.x;
+        this.rect.y = this.y;
+    }
+
+    draw(ctx, camera) {
+        if (this.life > 0) {
+            ctx.globalAlpha = this.life;
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.rect.x - camera.x, this.rect.y - camera.y, this.rect.w, this.rect.h);
+            ctx.globalAlpha = 1.0;
+        }
+    }
+}
+
+class Entity {
+    constructor(x, y, width, height, color, hp, speed) {
+        this.rect = new Rect(x, y, width, height);
+        this.color = color;
+        this.hp = hp;
+        this.maxHp = hp;
+        this.speed = speed;
+        this.dead = false;
+    }
+
+    move(dx, dy, walls) {
+        // Normalize
+        if (dx !== 0 && dy !== 0 && Math.abs(dx) === 1 && Math.abs(dy) === 1) {
+            dx *= 0.7071;
+            dy *= 0.7071;
+        }
+
+        // Move X
+        this.rect.x += dx * this.speed;
+        for (let wall of walls) {
+            if (this.rect.colliderect(wall.rect)) {
+                if (dx > 0) this.rect.x = wall.rect.left - this.rect.w;
+                else if (dx < 0) this.rect.x = wall.rect.right;
+            }
+        }
+
+        // Move Y
+        this.rect.y += dy * this.speed;
+        for (let wall of walls) {
+            if (this.rect.colliderect(wall.rect)) {
+                if (dy > 0) this.rect.y = wall.rect.top - this.rect.h;
+                else if (dy < 0) this.rect.y = wall.rect.bottom;
+            }
+        }
+    }
+
+    draw(ctx, camera) {
+        const iso = toIso(this.rect.x - camera.x, this.rect.y - camera.y);
+        const screenX = iso.x + ctx.canvas.width / 2;
+        const screenY = iso.y + ctx.canvas.height / 2;
+
+        const isoWidth = this.rect.w * 0.5;
+        const isoHeight = this.rect.h * 0.25;
+        const entityHeight = this.rect.h * 0.6;
+
+        // Draw shadow
+        ctx.fillStyle = COLORS.SHADOW;
+        ctx.beginPath();
+        ctx.ellipse(screenX, screenY + isoHeight, isoWidth, isoHeight * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw entity body (diamond/rhombus shape with height)
+        const darkColor = this.color === COLORS.PLAYER ? COLORS.PLAYER_DARK :
+                         this.color === COLORS.MINION ? COLORS.MINION_DARK :
+                         this.color === COLORS.ENEMY ? COLORS.ENEMY_DARK :
+                         COLORS.BOSS;
+
+        // Front face
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY - entityHeight);
+        ctx.lineTo(screenX + isoWidth, screenY - entityHeight + isoHeight);
+        ctx.lineTo(screenX, screenY - entityHeight + isoHeight * 2);
+        ctx.lineTo(screenX - isoWidth, screenY - entityHeight + isoHeight);
+        ctx.closePath();
+        ctx.fill();
+
+        // Left side
+        ctx.fillStyle = darkColor;
+        ctx.beginPath();
+        ctx.moveTo(screenX - isoWidth, screenY - entityHeight + isoHeight);
+        ctx.lineTo(screenX - isoWidth, screenY + isoHeight);
+        ctx.lineTo(screenX, screenY + isoHeight * 2);
+        ctx.lineTo(screenX, screenY - entityHeight + isoHeight * 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Right side
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.moveTo(screenX + isoWidth, screenY - entityHeight + isoHeight);
+        ctx.lineTo(screenX + isoWidth, screenY + isoHeight);
+        ctx.lineTo(screenX, screenY + isoHeight * 2);
+        ctx.lineTo(screenX, screenY - entityHeight + isoHeight * 2);
+        ctx.closePath();
+        ctx.fill();
+
+        this.drawHealth(ctx, camera);
+    }
+
+    drawHealth(ctx, camera) {
+        if (this.hp < this.maxHp) {
+            const barWidth = this.rect.w;
+            const barHeight = 5;
+            let fill = (this.hp / this.maxHp) * barWidth;
+            if (fill < 0) fill = 0;
+
+            const rx = this.rect.x - camera.x;
+            const ry = this.rect.y - 10 - camera.y;
+
+            ctx.fillStyle = COLORS.ENEMY; // Back
+            ctx.fillRect(rx, ry, barWidth, barHeight);
+            ctx.fillStyle = COLORS.MINION; // Fill
+            ctx.fillRect(rx, ry, fill, barHeight);
+        }
+    }
+}
+
+class Player extends Entity {
+    constructor(x, y) {
+        super(x, y, 30, 30, COLORS.PLAYER, playerStats.maxHp, 4);
+        this.mana = playerStats.maxMana;
+        this.summonCooldown = 0;
+    }
+
+    update(walls, input) {
+        const { dx, dy } = input.getAxis();
+        this.move(dx, dy, walls);
+
+        // Regen Mana
+        if (this.mana < playerStats.maxMana) {
+            this.mana += playerStats.manaRegen;
+            if (this.mana > playerStats.maxMana) this.mana = playerStats.maxMana;
+        }
+
+        // Summon
+        if (input.keys['Space'] || input.summonPressed) {
+            this.summon();
+        }
+
+        if (this.summonCooldown > 0) this.summonCooldown--;
+    }
+
+    summon() {
+        if (this.mana >= playerStats.minionCost && this.summonCooldown <= 0) {
+            this.mana -= playerStats.minionCost;
+            this.summonCooldown = 20;
+
+            const mx = this.rect.x + (Math.random() * 60 - 30);
+            const my = this.rect.y + (Math.random() * 60 - 30);
+            const minion = new Minion(mx, my, this);
+            game.addMinion(minion);
+
+            game.spawnParticles(this.rect.x, this.rect.y, COLORS.MINION, 5);
+        }
+    }
+}
+
+class Minion extends Entity {
+    constructor(x, y, owner) {
+        super(x, y, 20, 20, COLORS.MINION, 30, 3.5);
+        this.owner = owner;
+        this.target = null;
+        this.damage = 10;
+        this.attackCooldown = 0;
+    }
+
+    update(enemies, walls) {
+        // AI: Find closest
+        let closestDist = 400;
+        this.target = null;
+
+        for (let enemy of enemies) {
+            let dist = getDistance(this, enemy);
+            if (dist < closestDist) {
+                closestDist = dist;
+                this.target = enemy;
+            }
+        }
+
+        let dx = 0, dy = 0;
+
+        if (this.target) {
+            // Chase
+            let angle = Math.atan2(this.target.rect.centerY - this.rect.centerY, this.target.rect.centerX - this.rect.centerX);
+            dx = Math.cos(angle);
+            dy = Math.sin(angle);
+
+            // Attack
+            if (closestDist < 30) {
+                if (this.attackCooldown <= 0) {
+                    this.target.hp -= this.damage;
+                    this.attackCooldown = 40;
+                    game.spawnParticles(this.target.rect.x, this.target.rect.y, COLORS.WHITE, 2);
+                }
+            }
+        } else {
+            // Follow player
+            let distToPlayer = getDistance(this, this.owner);
+            if (distToPlayer > 80) {
+                let angle = Math.atan2(this.owner.rect.centerY - this.rect.centerY, this.owner.rect.centerX - this.rect.centerX);
+                dx = Math.cos(angle);
+                dy = Math.sin(angle);
+            }
+        }
+
+        this.move(dx, dy, walls);
+        if (this.attackCooldown > 0) this.attackCooldown--;
+    }
+}
+
+class Enemy extends Entity {
+    constructor(x, y, isBoss = false) {
+        const w = isBoss ? 60 : 30;
+        const h = isBoss ? 60 : 30;
+        const color = isBoss ? COLORS.BOSS : COLORS.ENEMY;
+        const hp = isBoss ? 500 : 40;
+        const speed = isBoss ? 2.0 : 2.5;
+
+        super(x, y, w, h, color, hp, speed);
+
+        this.damage = isBoss ? 15 : 5;
+        this.isBoss = isBoss;
+        this.attackCooldown = 0;
+        this.xpValue = isBoss ? 100 : 20;
+        this.goldValue = isBoss ? 200 : 10;
+    }
+
+    update(player, minions, walls) {
+        let targets = [player, ...minions];
+        let closestTarget = null;
+        let closestDist = 600;
+
+        for (let t of targets) {
+            let dist = getDistance(this, t);
+            if (dist < closestDist) {
+                closestDist = dist;
+                closestTarget = t;
+            }
+        }
+
+        if (closestTarget) {
+            let angle = Math.atan2(closestTarget.rect.centerY - this.rect.centerY, closestTarget.rect.centerX - this.rect.centerX);
+            let dx = Math.cos(angle);
+            let dy = Math.sin(angle);
+            this.move(dx, dy, walls);
+
+            if (closestDist < 40 && this.attackCooldown <= 0) {
+                closestTarget.hp -= this.damage;
+                this.attackCooldown = 60;
+                game.spawnParticles(closestTarget.rect.x, closestTarget.rect.y, COLORS.ENEMY, 3);
+            }
+        }
+        if (this.attackCooldown > 0) this.attackCooldown--;
+    }
+}
+
+// --- Map Generation ---
+
+class Wall {
+    constructor(x, y) {
+        this.rect = new Rect(x, y, TILE_SIZE, TILE_SIZE);
+    }
+    draw(ctx, camera) {
+        const iso = toIso(this.rect.x - camera.x, this.rect.y - camera.y);
+        const screenX = iso.x + ctx.canvas.width / 2;
+        const screenY = iso.y + ctx.canvas.height / 2;
+
+        // Simple culling
+        if (screenX < -100 || screenX > ctx.canvas.width + 100 || screenY < -100 || screenY > ctx.canvas.height + 100) return;
+
+        const isoWidth = TILE_SIZE * 0.866;
+        const isoHeight = TILE_SIZE * 0.5;
+        const wallHeight = 20;
+
+        // Draw wall top (diamond shape)
+        ctx.fillStyle = COLORS.WALL_TOP;
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY - wallHeight);
+        ctx.lineTo(screenX + isoWidth, screenY - wallHeight + isoHeight);
+        ctx.lineTo(screenX, screenY - wallHeight + isoHeight * 2);
+        ctx.lineTo(screenX - isoWidth, screenY - wallHeight + isoHeight);
+        ctx.closePath();
+        ctx.fill();
+
+        // Draw left side
+        ctx.fillStyle = COLORS.WALL_SIDE;
+        ctx.beginPath();
+        ctx.moveTo(screenX - isoWidth, screenY - wallHeight + isoHeight);
+        ctx.lineTo(screenX - isoWidth, screenY + isoHeight);
+        ctx.lineTo(screenX, screenY + isoHeight * 2);
+        ctx.lineTo(screenX, screenY - wallHeight + isoHeight * 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Draw right side
+        ctx.fillStyle = COLORS.WALL;
+        ctx.beginPath();
+        ctx.moveTo(screenX + isoWidth, screenY - wallHeight + isoHeight);
+        ctx.lineTo(screenX + isoWidth, screenY + isoHeight);
+        ctx.lineTo(screenX, screenY + isoHeight * 2);
+        ctx.lineTo(screenX, screenY - wallHeight + isoHeight * 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = COLORS.BORDER;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+}
+
+class GameMap {
+    constructor(w, h) {
+        this.width = w;
+        this.height = h;
+        this.grid = [];
+        this.walls = [];
+        this.spawnPoint = {x:0, y:0};
+        this.bossPoint = {x:0, y:0};
+    }
+
+    generate() {
+        // Init Grid with Walls (1)
+        this.grid = [];
+        for(let y=0; y<this.height; y++) {
+            let row = [];
+            for(let x=0; x<this.width; x++) row.push(1);
+            this.grid.push(row);
+        }
+
+        let cx = Math.floor(this.width / 2);
+        let cy = Math.floor(this.height / 2);
+        this.spawnPoint = {x: cx * TILE_SIZE, y: cy * TILE_SIZE};
+
+        let steps = 1200;
+
+        while(steps > 0) {
+            this.grid[cy][cx] = 0; // Floor
+
+            let dir = Math.floor(Math.random() * 4);
+            if (dir === 0) cy--;
+            else if (dir === 1) cy++;
+            else if (dir === 2) cx--;
+            else if (dir === 3) cx++;
+
+            // Clamp
+            cx = Math.max(1, Math.min(this.width - 2, cx));
+            cy = Math.max(1, Math.min(this.height - 2, cy));
+            steps--;
+        }
+
+        this.bossPoint = {x: cx * TILE_SIZE, y: cy * TILE_SIZE};
+
+        // Build Walls
+        this.walls = [];
+        for(let y=0; y<this.height; y++) {
+            for(let x=0; x<this.width; x++) {
+                if (this.grid[y][x] === 1) {
+                    this.walls.push(new Wall(x * TILE_SIZE, y * TILE_SIZE));
+                }
+            }
+        }
+    }
+}
+
+// --- Main Game Engine ---
+
+class Game {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.input = new InputHandler();
+
+        this.state = STATES.HUB;
+        this.dungeonLevel = 1;
+        this.mapWidth = 40;
+        this.mapHeight = 40;
+
+        this.entities = [];
+        this.walls = [];
+        this.minions = [];
+        this.enemies = [];
+        this.particles = [];
+        this.player = null;
+
+        this.camera = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+
+        window.addEventListener('resize', () => this.resize());
+        this.resize();
+
+        this.loop = this.loop.bind(this);
+        requestAnimationFrame(this.loop);
+    }
+
+    resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        this.camera.w = this.canvas.width;
+        this.camera.h = this.canvas.height;
+    }
+
+    spawnParticles(x, y, color, count) {
+        for(let i=0; i<count; i++) {
+            this.particles.push(new Particle(x, y, color));
+        }
+    }
+
+    addMinion(minion) {
+        this.minions.push(minion);
+        this.entities.push(minion);
+    }
+
+    startDungeon() {
+        this.state = STATES.DUNGEON;
+        this.entities = [];
+        this.minions = [];
+        this.enemies = [];
+        this.particles = [];
+
+        const map = new GameMap(this.mapWidth, this.mapHeight);
+        map.generate();
+        this.walls = map.walls;
+        this.grid = map.grid; // For enemy spawning check
+
+        this.player = new Player(map.spawnPoint.x, map.spawnPoint.y);
+        this.entities.push(this.player);
+
+        // Boss
+        const boss = new Enemy(map.bossPoint.x, map.bossPoint.y, true);
+        this.enemies.push(boss);
+        this.entities.push(boss);
+
+        // Enemies
+        let numEnemies = 10 + (this.dungeonLevel * 2);
+        while (numEnemies > 0) {
+            let rx = Math.floor(Math.random() * (this.mapWidth - 2)) + 1;
+            let ry = Math.floor(Math.random() * (this.mapHeight - 2)) + 1;
+
+            if (this.grid[ry][rx] === 0) {
+                // Check dist
+                const ex = rx * TILE_SIZE;
+                const ey = ry * TILE_SIZE;
+                const dist = Math.hypot(ex - this.player.rect.x, ey - this.player.rect.y);
+
+                if (dist > 400) {
+                    const enemy = new Enemy(ex, ey);
+                    this.enemies.push(enemy);
+                    this.entities.push(enemy);
+                    numEnemies--;
+                }
+            }
+        }
+    }
+
+    handleStart() {
+        if (this.state === STATES.HUB) {
+            this.startDungeon();
+        }
+    }
+
+    handleRestart() {
+        if (this.state === STATES.GAMEOVER || this.state === STATES.VICTORY) {
+            this.state = STATES.HUB;
+        }
+    }
+
+    handleUpgrade(type) {
+        if (this.state !== STATES.HUB) return;
+
+        if (type === 'hp' && playerStats.gold >= 50) {
+            playerStats.gold -= 50;
+            playerStats.maxHp += 20;
+        } else if (type === 'mana' && playerStats.gold >= 50) {
+            playerStats.gold -= 50;
+            playerStats.maxMana += 20;
+        }
+    }
+
+    update() {
+        if (this.state === STATES.DUNGEON) {
+            this.player.update(this.walls, this.input);
+
+            // Clean dead entities
+            this.minions = this.minions.filter(m => !m.dead);
+            this.enemies = this.enemies.filter(e => !e.dead);
+            this.entities = this.entities.filter(e => !e.dead);
+
+            // Update Minions
+            this.minions.forEach(m => m.update(this.enemies, this.walls));
+
+            // Update Enemies
+            this.enemies.forEach(e => {
+                e.update(this.player, this.minions, this.walls);
+                if (e.hp <= 0) {
+                    e.dead = true;
+                    playerStats.gold += e.goldValue;
+                    playerStats.xp += e.xpValue;
+                    this.spawnParticles(e.rect.x, e.rect.y, COLORS.GOLD, 8);
+
+                    if (e.isBoss) {
+                        this.state = STATES.VICTORY;
+                        this.dungeonLevel++;
+                    }
+                }
+            });
+
+            // Update Particles
+            this.particles.forEach(p => p.update());
+            this.particles = this.particles.filter(p => p.life > 0);
+
+            // Minion death check
+            this.minions.forEach(m => {
+                if(m.hp <= 0) m.dead = true;
+            });
+
+            // Player Death
+            if (this.player.hp <= 0) {
+                this.state = STATES.GAMEOVER;
+                playerStats.gold = 0; // Penalty
+            }
+
+            // Camera Follow
+            const targetX = -this.player.rect.centerX + this.canvas.width / 2;
+            const targetY = -this.player.rect.centerY + this.canvas.height / 2;
+
+            // Basic Clamping (optional, but good)
+            this.camera.x = -targetX;
+            this.camera.y = -targetY;
+        }
+    }
+
+    draw() {
+        // Clear
+        this.ctx.fillStyle = COLORS.BG;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        if (this.state === STATES.HUB) {
+            this.drawHub();
+        } else if (this.state === STATES.DUNGEON) {
+            this.drawDungeon();
+            this.drawHUD();
+        } else if (this.state === STATES.GAMEOVER) {
+            this.drawDungeon(); // Show background still
+            this.drawOverlay("YOU DIED", COLORS.ENEMY, "Press R or Tap Button to Return");
+        } else if (this.state === STATES.VICTORY) {
+            this.drawDungeon();
+            this.drawOverlay("FLOOR CLEARED!", COLORS.MINION, "Press R or Tap Button to Rest");
+        }
+    }
+
+    drawDungeon() {
+        // Fill Visible Area with Floor
+        // We'll just fill the screen with floor color to act as 'void' or floor
+        this.ctx.fillStyle = COLORS.FLOOR;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw Walls
+        for (let wall of this.walls) {
+            wall.draw(this.ctx, this.camera);
+        }
+
+        // Draw Entities
+        for (let ent of this.entities) {
+            ent.draw(this.ctx, this.camera);
+        }
+
+        // Draw Particles
+        for (let p of this.particles) {
+            p.draw(this.ctx, this.camera);
+        }
+    }
+
+    drawHub() {
+        const cx = this.canvas.width / 2;
+        const cy = this.canvas.height / 2;
+
+        this.drawText("THE MANOR", 60, COLORS.GOLD, cx, 100);
+        this.drawText(`Gold: ${playerStats.gold}`, 30, COLORS.GOLD, cx, 180);
+        this.drawText(`Floor Record: ${this.dungeonLevel}`, 25, COLORS.WHITE, cx, 220);
+
+        const btnY = cy + 50;
+        this.drawText("[ ENTER / TAP ] Start Expedition", 30, COLORS.MINION, cx, btnY);
+
+        const hpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
+        this.drawText(`[ H ] Upgrade HP (50g)`, 25, hpColor, cx, btnY + 60);
+
+        const mpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
+        this.drawText(`[ M ] Upgrade Mana (50g)`, 25, mpColor, cx, btnY + 100);
+    }
+
+    drawHUD() {
+        // HP Bar
+        this.ctx.fillStyle = COLORS.WALL;
+        this.ctx.fillRect(20, 20, 200, 20);
+        const hpPct = Math.max(0, this.player.hp / playerStats.maxHp);
+        this.ctx.fillStyle = COLORS.ENEMY;
+        this.ctx.fillRect(20, 20, 200 * hpPct, 20);
+        this.drawText(`${Math.floor(this.player.hp)}/${playerStats.maxHp} HP`, 16, COLORS.WHITE, 120, 36);
+
+        // Mana Bar
+        this.ctx.fillStyle = COLORS.WALL;
+        this.ctx.fillRect(20, 50, 200, 20);
+        const mpPct = Math.max(0, this.player.mana / playerStats.maxMana);
+        this.ctx.fillStyle = COLORS.PLAYER;
+        this.ctx.fillRect(20, 50, 200 * mpPct, 20);
+        this.drawText(`${Math.floor(this.player.mana)}/${playerStats.maxMana} MP`, 16, COLORS.WHITE, 120, 66);
+
+        // Stats
+        this.drawText(`Floor ${this.dungeonLevel}`, 24, COLORS.WHITE, this.canvas.width - 80, 40);
+        this.drawText(`Gold: ${playerStats.gold}`, 24, COLORS.GOLD, this.canvas.width / 2, 40);
+    }
+
+    drawOverlay(title, color, sub) {
+        this.ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const cx = this.canvas.width / 2;
+        const cy = this.canvas.height / 2;
+
+        this.drawText(title, 50, color, cx, cy - 40);
+        this.drawText(sub, 24, COLORS.WHITE, cx, cy + 40);
+    }
+
+    drawText(text, size, color, x, y) {
+        this.ctx.fillStyle = color;
+        this.ctx.font = `bold ${size}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(text, x, y);
+    }
+
+    loop() {
+        this.update();
+        this.draw();
+        requestAnimationFrame(this.loop);
+    }
+}
+
+// Start
+const game = new Game();
+
+</script>
 </body>
 </html>
