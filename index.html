@@ -107,8 +107,8 @@
 
 <script>
 /**
- * Summoner Roguelike Web Port
- * Logic adapted from Python Pygame version.
+ * Summoner's Estate - Enhanced Roguelike
+ * Complete redesign with BSP dungeons, advanced systems, and improved visuals
  */
 
 // --- Constants ---
@@ -119,6 +119,7 @@ const COLORS = {
     BG: '#0d0d0d',
     FLOOR: '#2a1f1a',
     FLOOR_DARK: '#1a1410',
+    FLOOR_LIGHT: '#3a2f2a',
     WALL: '#3d3d3d',
     WALL_TOP: '#4a4a4a',
     WALL_SIDE: '#2d2d2d',
@@ -129,11 +130,19 @@ const COLORS = {
     MINION_DARK: '#c0392b',
     ENEMY: '#8b8b8b',
     ENEMY_DARK: '#6a6a6a',
+    ENEMY_RANGED: '#e67e22',
+    ENEMY_FAST: '#3498db',
     BOSS: '#9b59b6',
     GOLD: '#f1c40f',
+    HEALTH_POTION: '#e74c3c',
+    MANA_POTION: '#3498db',
+    EQUIPMENT: '#95a5a6',
+    ARTIFACT: '#9b59b6',
     WHITE: '#ffffff',
     SHADOW: 'rgba(0, 0, 0, 0.4)',
-    UI_BG: 'rgba(0, 0, 0, 0.8)'
+    UI_BG: 'rgba(0, 0, 0, 0.8)',
+    FOG: 'rgba(13, 13, 13, 0.8)',
+    LIGHT: 'rgba(255, 255, 200, 0.1)'
 };
 
 const STATES = {
@@ -151,8 +160,27 @@ const playerStats = {
     gold: 0,
     level: 1,
     xp: 0,
-    minionCost: 20
+    xpToNext: 100,
+    minionCost: 20,
+    minionDamage: 10,
+    critChance: 0.05
 };
+
+function levelUp() {
+    playerStats.level++;
+    playerStats.xp = 0;
+    playerStats.xpToNext = Math.floor(playerStats.xpToNext * 1.5);
+    playerStats.maxHp += 20;
+    playerStats.maxMana += 15;
+    playerStats.manaRegen += 0.05;
+    playerStats.minionDamage += 2;
+
+    if (game && game.player) {
+        game.player.hp = playerStats.maxHp;
+        game.player.mana = playerStats.maxMana;
+        game.spawnParticles(game.player.rect.x, game.player.rect.y, COLORS.GOLD, 20);
+    }
+}
 
 // --- Math & Helper Classes ---
 
@@ -489,7 +517,6 @@ class Minion extends Entity {
         super(x, y, 20, 20, COLORS.MINION, 30, 3.5);
         this.owner = owner;
         this.target = null;
-        this.damage = 10;
         this.attackCooldown = 0;
     }
 
@@ -517,9 +544,12 @@ class Minion extends Entity {
             // Attack
             if (closestDist < 30) {
                 if (this.attackCooldown <= 0) {
-                    this.target.hp -= this.damage;
+                    // Use player's minion damage stat with variance
+                    const variance = 0.8 + Math.random() * 0.4;
+                    const damage = Math.floor(playerStats.minionDamage * variance);
+                    this.target.hp -= damage;
                     this.attackCooldown = 40;
-                    game.spawnParticles(this.target.rect.x, this.target.rect.y, COLORS.WHITE, 2);
+                    game.spawnParticles(this.target.rect.x, this.target.rect.y, COLORS.MINION, 3);
                 }
             }
         } else {
@@ -538,20 +568,66 @@ class Minion extends Entity {
 }
 
 class Enemy extends Entity {
-    constructor(x, y, isBoss = false) {
-        const w = isBoss ? 60 : 30;
-        const h = isBoss ? 60 : 30;
-        const color = isBoss ? COLORS.BOSS : COLORS.ENEMY;
-        const hp = isBoss ? 500 : 40;
-        const speed = isBoss ? 2.0 : 2.5;
+    constructor(x, y, type = 'normal') {
+        // type: 'normal', 'fast', 'ranged', 'tank', 'boss'
+        let w, h, color, hp, speed, damage, xp, gold;
+
+        switch(type) {
+            case 'boss':
+                w = h = 60;
+                color = COLORS.BOSS;
+                hp = 500;
+                speed = 2.0;
+                damage = 15;
+                xp = 100;
+                gold = 200;
+                break;
+            case 'fast':
+                w = h = 25;
+                color = COLORS.ENEMY_FAST;
+                hp = 25;
+                speed = 4.5;
+                damage = 3;
+                xp = 15;
+                gold = 8;
+                break;
+            case 'ranged':
+                w = h = 30;
+                color = COLORS.ENEMY_RANGED;
+                hp = 30;
+                speed = 2.0;
+                damage = 8;
+                xp = 25;
+                gold = 15;
+                break;
+            case 'tank':
+                w = h = 35;
+                color = COLORS.ENEMY_DARK;
+                hp = 80;
+                speed = 1.5;
+                damage = 10;
+                xp = 30;
+                gold = 20;
+                break;
+            default: // normal
+                w = h = 30;
+                color = COLORS.ENEMY;
+                hp = 40;
+                speed = 2.5;
+                damage = 5;
+                xp = 20;
+                gold = 10;
+        }
 
         super(x, y, w, h, color, hp, speed);
 
-        this.damage = isBoss ? 15 : 5;
-        this.isBoss = isBoss;
+        this.damage = damage;
+        this.type = type;
+        this.isBoss = type === 'boss';
         this.attackCooldown = 0;
-        this.xpValue = isBoss ? 100 : 20;
-        this.goldValue = isBoss ? 200 : 10;
+        this.xpValue = xp;
+        this.goldValue = gold;
+        this.attackRange = type === 'ranged' ? 150 : 40;
     }
 
     update(player, minions, walls) {
@@ -571,24 +647,185 @@ class Enemy extends Entity {
             let angle = Math.atan2(closestTarget.rect.centerY - this.rect.centerY, closestTarget.rect.centerX - this.rect.centerX);
             let dx = Math.cos(angle);
             let dy = Math.sin(angle);
-            this.move(dx, dy, walls);
 
-            if (closestDist < 40 && this.attackCooldown <= 0) {
-                closestTarget.hp -= this.damage;
-                this.attackCooldown = 60;
-                game.spawnParticles(closestTarget.rect.x, closestTarget.rect.y, COLORS.ENEMY, 3);
+            // Ranged enemies keep distance
+            if (this.type === 'ranged') {
+                if (closestDist > 120) {
+                    this.move(dx, dy, walls);
+                } else if (closestDist < 80) {
+                    this.move(-dx, -dy, walls); // Retreat
+                }
+            } else {
+                this.move(dx, dy, walls);
+            }
+
+            if (closestDist < this.attackRange && this.attackCooldown <= 0) {
+                // Add damage variance (±20%)
+                const variance = 0.8 + Math.random() * 0.4;
+                const finalDamage = Math.floor(this.damage * variance);
+
+                // 10% crit chance (double damage)
+                const isCrit = Math.random() < 0.1;
+                const damage = isCrit ? finalDamage * 2 : finalDamage;
+
+                closestTarget.hp -= damage;
+                this.attackCooldown = this.type === 'fast' ? 40 : 60;
+
+                const particleColor = isCrit ? COLORS.GOLD : COLORS.ENEMY;
+                game.spawnParticles(closestTarget.rect.x, closestTarget.rect.y, particleColor, isCrit ? 6 : 3);
+
+                // Ranged projectile effect
+                if (this.type === 'ranged') {
+                    game.spawnParticles(this.rect.x, this.rect.y, COLORS.ENEMY_RANGED, 3);
+                }
             }
         }
         if (this.attackCooldown > 0) this.attackCooldown--;
     }
 }
 
-// --- Map Generation ---
+// --- Item System ---
+
+class Item {
+    constructor(x, y, type) {
+        this.rect = new Rect(x, y, 20, 20);
+        this.type = type; // 'health', 'mana', 'equipment', 'artifact'
+        this.picked = false;
+
+        this.color = type === 'health' ? COLORS.HEALTH_POTION :
+                     type === 'mana' ? COLORS.MANA_POTION :
+                     type === 'equipment' ? COLORS.EQUIPMENT :
+                     COLORS.ARTIFACT;
+    }
+
+    draw(ctx, camera) {
+        if (this.picked) return;
+
+        const iso = toIso(this.rect.x - camera.x, this.rect.y - camera.y);
+        const screenX = iso.x + ctx.canvas.width / 2;
+        const screenY = iso.y + ctx.canvas.height / 2;
+
+        const size = 8;
+
+        // Draw item as a glowing diamond
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY - size);
+        ctx.lineTo(screenX + size, screenY);
+        ctx.lineTo(screenX, screenY + size);
+        ctx.lineTo(screenX - size, screenY);
+        ctx.closePath();
+        ctx.fill();
+
+        // Glow effect
+        ctx.globalAlpha = 0.3 + Math.sin(Date.now() / 200) * 0.2;
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+    }
+
+    pickup(player) {
+        if (this.picked) return;
+        this.picked = true;
+
+        if (this.type === 'health') {
+            player.hp = Math.min(player.maxHp, player.hp + 30);
+            game.spawnParticles(this.rect.x, this.rect.y, COLORS.HEALTH_POTION, 5);
+        } else if (this.type === 'mana') {
+            player.mana = Math.min(playerStats.maxMana, player.mana + 30);
+            game.spawnParticles(this.rect.x, this.rect.y, COLORS.MANA_POTION, 5);
+        } else if (this.type === 'equipment') {
+            playerStats.gold += 25;
+            game.spawnParticles(this.rect.x, this.rect.y, COLORS.GOLD, 8);
+        } else if (this.type === 'artifact') {
+            playerStats.gold += 100;
+            playerStats.maxHp += 10;
+            game.spawnParticles(this.rect.x, this.rect.y, COLORS.ARTIFACT, 12);
+        }
+    }
+}
+
+// --- Map Generation (BSP Algorithm) ---
+
+class BSPNode {
+    constructor(x, y, w, h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+        this.left = null;
+        this.right = null;
+        this.room = null;
+    }
+
+    split() {
+        if (this.left || this.right) return false;
+
+        const splitH = Math.random() > 0.5;
+        const max = (splitH ? this.h : this.w) - 10;
+
+        if (max <= 10) return false;
+
+        const split = Math.floor(Math.random() * (max - 10)) + 10;
+
+        if (splitH) {
+            this.left = new BSPNode(this.x, this.y, this.w, split);
+            this.right = new BSPNode(this.x, this.y + split, this.w, this.h - split);
+        } else {
+            this.left = new BSPNode(this.x, this.y, split, this.h);
+            this.right = new BSPNode(this.x + split, this.y, this.w - split, this.h);
+        }
+
+        return true;
+    }
+
+    createRooms() {
+        if (this.left || this.right) {
+            if (this.left) this.left.createRooms();
+            if (this.right) this.right.createRooms();
+        } else {
+            const roomW = Math.floor(Math.random() * (this.w - 4)) + 4;
+            const roomH = Math.floor(Math.random() * (this.h - 4)) + 4;
+            const roomX = this.x + Math.floor(Math.random() * (this.w - roomW));
+            const roomY = this.y + Math.floor(Math.random() * (this.h - roomH));
+
+            this.room = new Rect(roomX, roomY, roomW, roomH);
+        }
+    }
+
+    getRoom() {
+        if (this.room) return this.room;
+
+        let leftRoom = null;
+        let rightRoom = null;
+
+        if (this.left) leftRoom = this.left.getRoom();
+        if (this.right) rightRoom = this.right.getRoom();
+
+        if (!leftRoom && !rightRoom) return null;
+        if (!rightRoom) return leftRoom;
+        if (!leftRoom) return rightRoom;
+
+        return Math.random() > 0.5 ? leftRoom : rightRoom;
+    }
+
+    getRooms() {
+        if (this.room) return [this.room];
+
+        let rooms = [];
+        if (this.left) rooms = rooms.concat(this.left.getRooms());
+        if (this.right) rooms = rooms.concat(this.right.getRooms());
+
+        return rooms;
+    }
+}
 
 class Wall {
     constructor(x, y) {
         this.rect = new Rect(x, y, TILE_SIZE, TILE_SIZE);
     }
+
     draw(ctx, camera) {
         const iso = toIso(this.rect.x - camera.x, this.rect.y - camera.y);
         const screenX = iso.x + ctx.canvas.width / 2;
@@ -644,6 +881,7 @@ class GameMap {
         this.height = h;
         this.grid = [];
         this.walls = [];
+        this.rooms = [];
         this.spawnPoint = {x:0, y:0};
         this.bossPoint = {x:0, y:0};
     }
@@ -657,28 +895,71 @@ class GameMap {
             this.grid.push(row);
         }
 
-        let cx = Math.floor(this.width / 2);
-        let cy = Math.floor(this.height / 2);
-        this.spawnPoint = {x: cx * TILE_SIZE, y: cy * TILE_SIZE};
+        // BSP Generation
+        const root = new BSPNode(1, 1, this.width - 2, this.height - 2);
 
-        let steps = 1200;
+        // Split recursively
+        const containers = [root];
+        let iterations = 0;
 
-        while(steps > 0) {
-            this.grid[cy][cx] = 0; // Floor
-
-            let dir = Math.floor(Math.random() * 4);
-            if (dir === 0) cy--;
-            else if (dir === 1) cy++;
-            else if (dir === 2) cx--;
-            else if (dir === 3) cx++;
-
-            // Clamp
-            cx = Math.max(1, Math.min(this.width - 2, cx));
-            cy = Math.max(1, Math.min(this.height - 2, cy));
-            steps--;
+        while (containers.length > 0 && iterations < 100) {
+            const container = containers.shift();
+            if (container.split()) {
+                containers.push(container.left);
+                containers.push(container.right);
+            }
+            iterations++;
         }
 
-        this.bossPoint = {x: cx * TILE_SIZE, y: cy * TILE_SIZE};
+        // Create rooms
+        root.createRooms();
+        this.rooms = root.getRooms();
+
+        // Carve out rooms
+        for (let room of this.rooms) {
+            for (let y = room.y; y < room.y + room.h; y++) {
+                for (let x = room.x; x < room.x + room.w; x++) {
+                    if (y >= 0 && y < this.height && x >= 0 && x < this.width) {
+                        this.grid[y][x] = 0;
+                    }
+                }
+            }
+        }
+
+        // Create corridors between rooms
+        for (let i = 0; i < this.rooms.length - 1; i++) {
+            const roomA = this.rooms[i];
+            const roomB = this.rooms[i + 1];
+
+            const startX = Math.floor(roomA.centerX);
+            const startY = Math.floor(roomA.centerY);
+            const endX = Math.floor(roomB.centerX);
+            const endY = Math.floor(roomB.centerY);
+
+            // L-shaped corridor
+            if (Math.random() > 0.5) {
+                this.createHCorridor(startX, endX, startY);
+                this.createVCorridor(startY, endY, endX);
+            } else {
+                this.createVCorridor(startY, endY, startX);
+                this.createHCorridor(startX, endX, endY);
+            }
+        }
+
+        // Set spawn and boss points
+        if (this.rooms.length > 0) {
+            const firstRoom = this.rooms[0];
+            this.spawnPoint = {
+                x: Math.floor(firstRoom.centerX) * TILE_SIZE,
+                y: Math.floor(firstRoom.centerY) * TILE_SIZE
+            };
+
+            const lastRoom = this.rooms[this.rooms.length - 1];
+            this.bossPoint = {
+                x: Math.floor(lastRoom.centerX) * TILE_SIZE,
+                y: Math.floor(lastRoom.centerY) * TILE_SIZE
+            };
+        }
 
         // Build Walls
         this.walls = [];
@@ -687,6 +968,32 @@ class GameMap {
                 if (this.grid[y][x] === 1) {
                     this.walls.push(new Wall(x * TILE_SIZE, y * TILE_SIZE));
                 }
+            }
+        }
+    }
+
+    createHCorridor(x1, x2, y) {
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+
+        for (let x = minX; x <= maxX; x++) {
+            if (y >= 0 && y < this.height && x >= 0 && x < this.width) {
+                this.grid[y][x] = 0;
+                // Make corridors 2 tiles wide
+                if (y + 1 < this.height) this.grid[y + 1][x] = 0;
+            }
+        }
+    }
+
+    createVCorridor(y1, y2, x) {
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+
+        for (let y = minY; y <= maxY; y++) {
+            if (y >= 0 && y < this.height && x >= 0 && x < this.width) {
+                this.grid[y][x] = 0;
+                // Make corridors 2 tiles wide
+                if (x + 1 < this.width) this.grid[y][x + 1] = 0;
             }
         }
     }
@@ -710,6 +1017,7 @@ class Game {
         this.minions = [];
         this.enemies = [];
         this.particles = [];
+        this.items = [];
         this.player = null;
 
         this.camera = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
@@ -745,39 +1053,73 @@ class Game {
         this.minions = [];
         this.enemies = [];
         this.particles = [];
+        this.items = [];
 
         const map = new GameMap(this.mapWidth, this.mapHeight);
         map.generate();
         this.walls = map.walls;
-        this.grid = map.grid; // For enemy spawning check
+        this.grid = map.grid;
+        this.rooms = map.rooms;
 
         this.player = new Player(map.spawnPoint.x, map.spawnPoint.y);
         this.entities.push(this.player);
 
-        // Boss
-        const boss = new Enemy(map.bossPoint.x, map.bossPoint.y, true);
+        // Boss in final room
+        const boss = new Enemy(map.bossPoint.x, map.bossPoint.y, 'boss');
         this.enemies.push(boss);
         this.entities.push(boss);
 
-        // Enemies
+        // Spawn diverse enemies
+        const enemyTypes = ['normal', 'fast', 'ranged', 'tank'];
         let numEnemies = 10 + (this.dungeonLevel * 2);
-        while (numEnemies > 0) {
+        let spawnAttempts = 0;
+
+        while (numEnemies > 0 && spawnAttempts < 500) {
             let rx = Math.floor(Math.random() * (this.mapWidth - 2)) + 1;
             let ry = Math.floor(Math.random() * (this.mapHeight - 2)) + 1;
 
             if (this.grid[ry][rx] === 0) {
-                // Check dist
                 const ex = rx * TILE_SIZE;
                 const ey = ry * TILE_SIZE;
                 const dist = Math.hypot(ex - this.player.rect.x, ey - this.player.rect.y);
 
                 if (dist > 400) {
-                    const enemy = new Enemy(ex, ey);
+                    // Random enemy type with weighted distribution
+                    const rand = Math.random();
+                    let type;
+                    if (rand < 0.4) type = 'normal';
+                    else if (rand < 0.6) type = 'fast';
+                    else if (rand < 0.8) type = 'ranged';
+                    else type = 'tank';
+
+                    const enemy = new Enemy(ex, ey, type);
                     this.enemies.push(enemy);
                     this.entities.push(enemy);
                     numEnemies--;
                 }
             }
+            spawnAttempts++;
+        }
+
+        // Spawn items in rooms
+        const itemTypes = ['health', 'mana', 'equipment', 'artifact'];
+        let numItems = 5 + Math.floor(this.dungeonLevel * 1.5);
+
+        for (let i = 0; i < numItems; i++) {
+            // Pick random room
+            const room = this.rooms[Math.floor(Math.random() * this.rooms.length)];
+            const itemX = (room.x + Math.floor(Math.random() * room.w)) * TILE_SIZE;
+            const itemY = (room.y + Math.floor(Math.random() * room.h)) * TILE_SIZE;
+
+            // Weighted item distribution
+            const rand = Math.random();
+            let type;
+            if (rand < 0.35) type = 'health';
+            else if (rand < 0.65) type = 'mana';
+            else if (rand < 0.90) type = 'equipment';
+            else type = 'artifact'; // Rare
+
+            this.items.push(new Item(itemX, itemY, type));
         }
     }
 
@@ -789,6 +1131,11 @@ class Game {
 
     handleRestart() {
         if (this.state === STATES.GAMEOVER || this.state === STATES.VICTORY) {
+            // On victory, restore some health and mana
+            if (this.state === STATES.VICTORY && this.player) {
+                this.player.hp = Math.min(playerStats.maxHp, this.player.hp + 50);
+                this.player.mana = playerStats.maxMana;
+            }
             this.state = STATES.HUB;
         }
     }
@@ -809,10 +1156,18 @@ class Game {
         if (this.state === STATES.DUNGEON) {
             this.player.update(this.walls, this.input);
 
+            // Item pickup
+            this.items.forEach(item => {
+                if (!item.picked && this.player.rect.colliderect(item.rect)) {
+                    item.pickup(this.player);
+                }
+            });
+
             // Clean dead entities
             this.minions = this.minions.filter(m => !m.dead);
             this.enemies = this.enemies.filter(e => !e.dead);
             this.entities = this.entities.filter(e => !e.dead);
+            this.items = this.items.filter(i => !i.picked);
 
             // Update Minions
             this.minions.forEach(m => m.update(this.enemies, this.walls));
@@ -820,11 +1175,23 @@ class Game {
             // Update Enemies
             this.enemies.forEach(e => {
                 e.update(this.player, this.minions, this.walls);
-                if (e.hp <= 0) {
+                if (e.hp <= 0 && !e.dead) {
                     e.dead = true;
                     playerStats.gold += e.goldValue;
                     playerStats.xp += e.xpValue;
                     this.spawnParticles(e.rect.x, e.rect.y, COLORS.GOLD, 8);
+
+                    // Check for level up
+                    if (playerStats.xp >= playerStats.xpToNext) {
+                        levelUp();
+                    }
+
+                    // 30% chance to drop item
+                    if (Math.random() < 0.3) {
+                        const dropTypes = ['health', 'mana', 'equipment'];
+                        const dropType = dropTypes[Math.floor(Math.random() * dropTypes.length)];
+                        this.items.push(new Item(e.rect.x, e.rect.y, dropType));
+                    }
 
                     if (e.isBoss) {
                         this.state = STATES.VICTORY;
@@ -848,11 +1215,10 @@ class Game {
                 playerStats.gold = 0; // Penalty
             }
 
-            // Camera Follow
+            // Camera Follow with smooth lerp
             const targetX = -this.player.rect.centerX + this.canvas.width / 2;
             const targetY = -this.player.rect.centerY + this.canvas.height / 2;
 
-            // Basic Clamping (optional, but good)
             this.camera.x = -targetX;
             this.camera.y = -targetY;
         }
@@ -879,7 +1245,6 @@ class Game {
 
     drawDungeon() {
         // Fill Visible Area with Floor
-        // We'll just fill the screen with floor color to act as 'void' or floor
         this.ctx.fillStyle = COLORS.FLOOR;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -888,8 +1253,16 @@ class Game {
             wall.draw(this.ctx, this.camera);
         }
 
+        // Draw Items
+        for (let item of this.items) {
+            item.draw(this.ctx, this.camera);
+        }
+
+        // Sort entities by Y position for proper depth
+        const sortedEntities = [...this.entities].sort((a, b) => a.rect.y - b.rect.y);
+
         // Draw Entities
-        for (let ent of this.entities) {
+        for (let ent of sortedEntities) {
             ent.draw(this.ctx, this.camera);
         }
 
@@ -904,17 +1277,21 @@ class Game {
         const cy = this.canvas.height / 2;
 
         this.drawText("THE MANOR", 60, COLORS.GOLD, cx, 100);
-        this.drawText(`Gold: ${playerStats.gold}`, 30, COLORS.GOLD, cx, 180);
-        this.drawText(`Floor Record: ${this.dungeonLevel}`, 25, COLORS.WHITE, cx, 220);
+        this.drawText(`Level ${playerStats.level} Summoner`, 28, COLORS.PLAYER, cx, 160);
+        this.drawText(`Gold: ${playerStats.gold}`, 30, COLORS.GOLD, cx, 200);
+        this.drawText(`Floor Record: ${this.dungeonLevel}`, 25, COLORS.WHITE, cx, 240);
 
         const btnY = cy + 50;
         this.drawText("[ ENTER / TAP ] Start Expedition", 30, COLORS.MINION, cx, btnY);
 
         const hpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
-        this.drawText(`[ H ] Upgrade HP (50g)`, 25, hpColor, cx, btnY + 60);
+        this.drawText(`[ H ] Upgrade HP (50g) - Current: ${playerStats.maxHp}`, 22, hpColor, cx, btnY + 60);
 
         const mpColor = playerStats.gold >= 50 ? COLORS.WHITE : COLORS.WALL;
-        this.drawText(`[ M ] Upgrade Mana (50g)`, 25, mpColor, cx, btnY + 100);
+        this.drawText(`[ M ] Upgrade Mana (50g) - Current: ${playerStats.maxMana}`, 22, mpColor, cx, btnY + 100);
+
+        // Stats info
+        this.drawText(`Minion Damage: ${playerStats.minionDamage}`, 18, COLORS.MINION_DARK, cx, btnY + 160);
     }
 
     drawHUD() {
@@ -922,7 +1299,7 @@ class Game {
         this.ctx.fillStyle = COLORS.WALL;
         this.ctx.fillRect(20, 20, 200, 20);
         const hpPct = Math.max(0, this.player.hp / playerStats.maxHp);
-        this.ctx.fillStyle = COLORS.ENEMY;
+        this.ctx.fillStyle = COLORS.MINION;
         this.ctx.fillRect(20, 20, 200 * hpPct, 20);
         this.drawText(`${Math.floor(this.player.hp)}/${playerStats.maxHp} HP`, 16, COLORS.WHITE, 120, 36);
 
@@ -934,9 +1311,24 @@ class Game {
         this.ctx.fillRect(20, 50, 200 * mpPct, 20);
         this.drawText(`${Math.floor(this.player.mana)}/${playerStats.maxMana} MP`, 16, COLORS.WHITE, 120, 66);
 
-        // Stats
-        this.drawText(`Floor ${this.dungeonLevel}`, 24, COLORS.WHITE, this.canvas.width - 80, 40);
-        this.drawText(`Gold: ${playerStats.gold}`, 24, COLORS.GOLD, this.canvas.width / 2, 40);
+        // XP Bar
+        this.ctx.fillStyle = COLORS.WALL;
+        this.ctx.fillRect(20, 80, 200, 15);
+        const xpPct = Math.max(0, playerStats.xp / playerStats.xpToNext);
+        this.ctx.fillStyle = COLORS.GOLD;
+        this.ctx.fillRect(20, 80, 200 * xpPct, 15);
+        this.ctx.textAlign = 'left';
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = 'bold 12px Arial';
+        this.ctx.fillText(`Level ${playerStats.level} - ${playerStats.xp}/${playerStats.xpToNext} XP`, 25, 92);
+
+        // Stats (top right)
+        this.ctx.textAlign = 'center';
+        this.drawText(`Floor ${this.dungeonLevel}`, 24, COLORS.WHITE, this.canvas.width - 80, 30);
+        this.drawText(`Gold: ${playerStats.gold}`, 20, COLORS.GOLD, this.canvas.width - 80, 60);
+
+        // Enemy count
+        this.drawText(`Enemies: ${this.enemies.length}`, 18, COLORS.ENEMY, this.canvas.width - 80, 85);
     }
 
     drawOverlay(title, color, sub) {
