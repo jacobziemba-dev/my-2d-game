@@ -317,6 +317,7 @@ export class Minion extends Entity {
         ctx.filter = "hue-rotate(180deg)"; // Turn Green to Blue-ish
         this.drawSprite(ctx, img, sx, sy, dx, dy, 48, 48, this.facingLeft);
         ctx.restore();
+        ctx.filter = "none";
 
         this.drawHealth(ctx, camera);
     }
