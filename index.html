@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Summoner's Estate</title>
+    <title>Summoner's Estate - Top-Down Version</title>
     <style>
         body {
             margin: 0;
@@ -396,19 +396,26 @@ class Entity {
     draw(ctx, camera) {
         const screenX = this.rect.x - camera.x;
         const screenY = this.rect.y - camera.y;
+        const centerX = screenX + this.rect.w / 2;
+        const centerY = screenY + this.rect.h / 2;
+        const radius = this.rect.w / 2;
 
-        // Draw shadow
+        // Draw shadow (offset circle)
         ctx.fillStyle = COLORS.SHADOW;
-        ctx.fillRect(screenX + 2, screenY + 2, this.rect.w, this.rect.h);
+        ctx.beginPath();
+        ctx.arc(centerX + 2, centerY + 2, radius, 0, Math.PI * 2);
+        ctx.fill();
 
-        // Draw entity body
+        // Draw entity body (circle for top-down view)
         ctx.fillStyle = this.color;
-        ctx.fillRect(screenX, screenY, this.rect.w, this.rect.h);
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.fill();
 
         // Draw border
-        ctx.strokeStyle = COLORS.BORDER;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(screenX, screenY, this.rect.w, this.rect.h);
+        ctx.strokeStyle = COLORS.WHITE;
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
         this.drawHealth(ctx, camera);
     }
@@ -1018,10 +1025,16 @@ class Game {
             const gridCenterY = firstRoom.y + firstRoom.h / 2;
             spawnX = gridCenterX * TILE_SIZE - 15;  // Center 30px player
             spawnY = gridCenterY * TILE_SIZE - 15;
+            console.log('Spawn was blocked, using fallback position');
         }
+
+        console.log(`Player spawning at: (${spawnX}, ${spawnY}), validSpawn: ${validSpawn}`);
+        console.log(`First room: x=${this.rooms[0].x}, y=${this.rooms[0].y}, w=${this.rooms[0].w}, h=${this.rooms[0].h}`);
 
         this.player = new Player(spawnX, spawnY);
         this.entities.push(this.player);
+
+        console.log(`Player created at: (${this.player.rect.x}, ${this.player.rect.y}), HP: ${this.player.hp}`);
 
         // Boss in final room
         const boss = new Enemy(map.bossPoint.x, map.bossPoint.y, 'boss');
