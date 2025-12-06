@@ -381,21 +381,21 @@ class Entity {
             dy *= 0.7071;
         }
 
-        // Move X
+        // Move X with collision buffer to prevent sticking
         this.rect.x += dx * this.speed;
         for (let wall of walls) {
             if (this.rect.colliderect(wall.rect)) {
-                if (dx > 0) this.rect.x = wall.rect.left - this.rect.w;
-                else if (dx < 0) this.rect.x = wall.rect.right;
+                if (dx > 0) this.rect.x = wall.rect.left - this.rect.w - 1;  // Add 1px buffer
+                else if (dx < 0) this.rect.x = wall.rect.right + 1;  // Add 1px buffer
             }
         }
 
-        // Move Y
+        // Move Y with collision buffer to prevent sticking
         this.rect.y += dy * this.speed;
         for (let wall of walls) {
             if (this.rect.colliderect(wall.rect)) {
-                if (dy > 0) this.rect.y = wall.rect.top - this.rect.h;
-                else if (dy < 0) this.rect.y = wall.rect.bottom;
+                if (dy > 0) this.rect.y = wall.rect.top - this.rect.h - 1;  // Add 1px buffer
+                else if (dy < 0) this.rect.y = wall.rect.bottom + 1;  // Add 1px buffer
             }
         }
     }
@@ -946,18 +946,23 @@ class GameMap {
             }
         }
 
-        // Set spawn and boss points (center of rooms, away from walls)
+        // Set spawn and boss points (center of rooms, properly calculated)
         if (this.rooms.length > 0) {
             const firstRoom = this.rooms[0];
+            // Calculate grid center first, then convert to pixels, then center the 30x30 player
+            const gridCenterX = firstRoom.x + firstRoom.w / 2;
+            const gridCenterY = firstRoom.y + firstRoom.h / 2;
             this.spawnPoint = {
-                x: (firstRoom.x + Math.floor(firstRoom.w / 2)) * TILE_SIZE + TILE_SIZE / 2,
-                y: (firstRoom.y + Math.floor(firstRoom.h / 2)) * TILE_SIZE + TILE_SIZE / 2
+                x: gridCenterX * TILE_SIZE - 15,  // Center 30px player (30/2 = 15)
+                y: gridCenterY * TILE_SIZE - 15
             };
 
             const lastRoom = this.rooms[this.rooms.length - 1];
+            const bossCenterX = lastRoom.x + lastRoom.w / 2;
+            const bossCenterY = lastRoom.y + lastRoom.h / 2;
             this.bossPoint = {
-                x: (lastRoom.x + Math.floor(lastRoom.w / 2)) * TILE_SIZE + TILE_SIZE / 2,
-                y: (lastRoom.y + Math.floor(lastRoom.h / 2)) * TILE_SIZE + TILE_SIZE / 2
+                x: bossCenterX * TILE_SIZE - 30,  // Center 60px boss (60/2 = 30)
+                y: bossCenterY * TILE_SIZE - 30
             };
         }
 
@@ -1061,12 +1066,14 @@ class Game {
         this.grid = map.grid;
         this.rooms = map.rooms;
 
-        // Ensure player spawns in a valid location
+        // Ensure player spawns in a valid location with clearance
         let spawnX = map.spawnPoint.x;
         let spawnY = map.spawnPoint.y;
 
-        // Verify spawn point is not in a wall
-        const playerTestRect = new Rect(spawnX, spawnY, 30, 30);
+        // Verify spawn point has clearance (not just touching walls)
+        const SPAWN_BUFFER = 5;  // Minimum 5px clearance from walls
+        const playerTestRect = new Rect(spawnX - SPAWN_BUFFER, spawnY - SPAWN_BUFFER,
+                                         30 + SPAWN_BUFFER * 2, 30 + SPAWN_BUFFER * 2);
         let validSpawn = true;
         for (let wall of this.walls) {
             if (playerTestRect.colliderect(wall.rect)) {
@@ -1075,11 +1082,13 @@ class Game {
             }
         }
 
-        // If spawn is blocked, use room center directly
+        // If spawn is blocked, use corrected room center calculation
         if (!validSpawn && this.rooms.length > 0) {
             const firstRoom = this.rooms[0];
-            spawnX = (firstRoom.x + firstRoom.w / 2) * TILE_SIZE;
-            spawnY = (firstRoom.y + firstRoom.h / 2) * TILE_SIZE;
+            const gridCenterX = firstRoom.x + firstRoom.w / 2;
+            const gridCenterY = firstRoom.y + firstRoom.h / 2;
+            spawnX = gridCenterX * TILE_SIZE - 15;  // Center 30px player
+            spawnY = gridCenterY * TILE_SIZE - 15;
         }
 
         this.player = new Player(spawnX, spawnY);
