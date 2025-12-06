@@ -241,8 +241,8 @@ export class Game {
             // Only update buttons if in Hub and gold changed
             if (isHub && this.lastGold !== playerStats.gold) {
                 if (this.hpBtn) {
-                     this.hpBtn.innerText = `UPGRADE HP (${UPGRADE_COST}g)`;
-                     this.hpBtn.style.opacity = playerStats.gold >= UPGRADE_COST ? '1' : '0.5';
+                    this.hpBtn.innerText = `UPGRADE HP (${UPGRADE_COST}g)`;
+                    this.hpBtn.style.opacity = playerStats.gold >= UPGRADE_COST ? '1' : '0.5';
                 }
                 if (this.manaBtn) {
                     this.manaBtn.innerText = `UPGRADE MANA (${UPGRADE_COST}g)`;
