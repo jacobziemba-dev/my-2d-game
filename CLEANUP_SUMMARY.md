@@ -1,7 +1,7 @@
 # Repository Cleanup Summary
 
 ## Issue Investigation
-Problem statement: "resolve conflics and clean up issios and requests"
+Problem statement: "resolve conflicts and clean up issues and requests"
 
 ## Findings
 
