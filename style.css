@@ -204,3 +204,49 @@ canvas {
     background: #27ae60;
     transform: scale(1.05);
 }
+
+/* Hub Controls for Mobile */
+#hubControls {
+    position: absolute;
+    bottom: 150px; /* Above the summon button */
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+    width: 100%;
+    pointer-events: auto;
+}
+
+.upgrade-btn {
+    background: rgba(0, 0, 0, 0.7);
+    border: 2px solid #fff;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: bold;
+    font-size: 16px;
+    cursor: pointer;
+    width: 200px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    user-select: none;
+    touch-action: manipulation;
+}
+
+.upgrade-btn:active {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(0.95);
+}
+
+#btn-upgrade-hp {
+    border-color: #e74c3c; /* Red for HP */
+    color: #e74c3c;
+}
+
+#btn-upgrade-mana {
+    border-color: #3498db; /* Blue for Mana */
+    color: #3498db;
+}
