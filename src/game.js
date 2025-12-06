@@ -16,6 +16,14 @@ export class Game {
         this.assets = {
             characters: new Image()
         };
+        this.assetsLoaded = false;
+        this.assets.characters.onload = () => {
+            this.assetsLoaded = true;
+        };
+        this.assets.characters.onerror = (e) => {
+            console.error('Failed to load character image asset:', e);
+            this.assetsLoaded = false;
+        };
         this.assets.characters.src = 'assets/characters.png';
 
         // UI Cache
