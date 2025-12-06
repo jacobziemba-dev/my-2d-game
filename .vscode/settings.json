@@ -1,0 +1,16 @@
+{
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "vite.serverCommand": "npm run dev",
+  "vite.serverPort": 5173
+}
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.validate": ["javascript"],
+  "files.associations": {
+    "*.js": "javascript"
+  }
+}
