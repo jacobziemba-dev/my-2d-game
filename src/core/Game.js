@@ -6,6 +6,9 @@ import { STATES, COLORS, TILE_SIZE } from '../constants.js';
 import { Rect } from '../utils.js';
 import { Renderer } from '../systems/Renderer.js';
 import { Camera } from '../systems/Camera.js';
+import { spawnDungeon } from '../systems/Spawner.js';
+import { AI } from '../systems/AI.js';
+import { Collision } from '../systems/Collision.js';
 import { HUD } from '../ui/HUD.js';
 
 export class Game {
@@ -38,6 +41,8 @@ export class Game {
 
         // Renderer
         this.renderer = new Renderer(this);
+        this.ai = new AI(this);
+        this.collision = new Collision(this);
 
         this.loop = this.loop.bind(this);
         requestAnimationFrame(this.loop);
@@ -131,59 +136,11 @@ export class Game {
 
         console.log(`Player created at: (${this.player.rect.x}, ${this.player.rect.y}), HP: ${this.player.hp}`);
 
-        // Boss in final room
-        const boss = new Enemy(map.bossPoint.x, map.bossPoint.y, 'boss');
-        this.enemies.push(boss);
-        this.entities.push(boss);
-
-        // Spawn diverse enemies
-        const enemyTypes = ['normal', 'fast', 'ranged', 'tank'];
-        let numEnemies = 10 + (this.dungeonLevel * 2);
-        let spawnAttempts = 0;
-
-        while (numEnemies > 0 && spawnAttempts < 500) {
-            let rx = Math.floor(Math.random() * (this.mapWidth - 2)) + 1;
-            let ry = Math.floor(Math.random() * (this.mapHeight - 2)) + 1;
-
-            if (this.grid[ry][rx] === 0) {
-                const ex = rx * TILE_SIZE;
-                const ey = ry * TILE_SIZE;
-                const dist = Math.hypot(ex - this.player.rect.x, ey - this.player.rect.y);
-
-                if (dist > 400) {
-                    const rand = Math.random();
-                    let type;
-                    if (rand < 0.4) type = 'normal';
-                    else if (rand < 0.6) type = 'fast';
-                    else if (rand < 0.8) type = 'ranged';
-                    else type = 'tank';
-
-                    const enemy = new Enemy(ex, ey, type);
-                    this.enemies.push(enemy);
-                    this.entities.push(enemy);
-                    numEnemies--;
-                }
-            }
-            spawnAttempts++;
-        }
-
-        // Spawn items in rooms
-        const itemTypes = ['health', 'mana', 'equipment', 'artifact'];
-        let numItems = 5 + Math.floor(this.dungeonLevel * 1.5);
-
-        for (let i = 0; i < numItems; i++) {
-            const room = this.rooms[Math.floor(Math.random() * this.rooms.length)];
-            const itemX = (room.x + Math.floor(Math.random() * room.w)) * TILE_SIZE;
-            const itemY = (room.y + Math.floor(Math.random() * room.h)) * TILE_SIZE;
-
-            const rand = Math.random();
-            let type;
-            if (rand < 0.35) type = 'health';
-            else if (rand < 0.65) type = 'mana';
-            else if (rand < 0.90) type = 'equipment';
-            else type = 'artifact';
-
-            this.items.push(new Item(itemX, itemY, type));
+        // Delegate spawning of enemies/items to the Spawner system
+        try {
+            spawnDungeon(this);
+        } catch (err) {
+            console.error('Spawner error:', err);
         }
     }
 
@@ -238,9 +195,19 @@ export class Game {
             // Update Minions
             this.minions.forEach(m => m.update(this));
 
-            // Update Enemies
+            // Update Enemies via AI system
+            try {
+                if (this.ai && typeof this.ai.updateAll === 'function') {
+                    this.ai.updateAll(this.enemies);
+                } else {
+                    this.enemies.forEach(e => { if (typeof e.update === 'function') e.update(this); });
+                }
+            } catch (err) {
+                console.error('Error in AI update:', err);
+            }
+
+            // Post-update death processing
             this.enemies.forEach(e => {
-                e.update(this);
                 if (e.hp <= 0 && !e.dead) {
                     e.dead = true;
                     playerStats.gold += e.goldValue;
