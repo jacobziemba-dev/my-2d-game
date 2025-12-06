@@ -197,7 +197,7 @@ export class Player extends Entity {
 
     draw(ctx, camera, game) {
         const img = game?.assets?.characters;
-        if (!img) {
+        if (!img || !img.complete) {
             super.draw(ctx, camera);
             return;
         }
