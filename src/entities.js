@@ -2,6 +2,8 @@ import { Rect, getDistance } from './utils.js';
 import { COLORS } from './constants.js';
 import { playerStats } from './state.js';
 
+const TILE_SIZE = 48; // Sprite size
+
 export class Particle {
     constructor(x, y, color) {
         this.x = x + 15;
@@ -39,6 +41,12 @@ export class Entity {
         this.maxHp = hp;
         this.speed = speed;
         this.dead = false;
+
+        // Animation State
+        this.frame = 0;
+        this.frameTimer = 0;
+        this.facingLeft = false;
+        this.direction = 0; // 0: Down, 1: Side, 2: Up
     }
 
     move(dx, dy, walls) {
@@ -67,31 +75,26 @@ export class Entity {
         }
     }
 
+    drawSprite(ctx, image, sx, sy, dx, dy, width, height, flip = false) {
+        if (!image) return;
+
+        ctx.save();
+        if (flip) {
+            ctx.scale(-1, 1);
+            ctx.drawImage(image, sx, sy, TILE_SIZE, TILE_SIZE, -dx - width, dy, width, height);
+        } else {
+            ctx.drawImage(image, sx, sy, TILE_SIZE, TILE_SIZE, dx, dy, width, height);
+        }
+        ctx.restore();
+    }
+
     draw(ctx, camera) {
+        // Fallback for entities without specific draw (particles etc)
         const screenX = this.rect.x - camera.x;
         const screenY = this.rect.y - camera.y;
-        const centerX = screenX + this.rect.w / 2;
-        const centerY = screenY + this.rect.h / 2;
-        const radius = this.rect.w / 2;
 
-        // Draw shadow (offset circle)
-        ctx.fillStyle = COLORS.SHADOW;
-        ctx.beginPath();
-        ctx.arc(centerX + 2, centerY + 2, radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw entity body (circle for top-down view)
         ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw border
-        ctx.strokeStyle = COLORS.WHITE;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        this.drawHealth(ctx, camera);
+        ctx.fillRect(screenX, screenY, this.rect.w, this.rect.h);
     }
 
     drawHealth(ctx, camera) {
@@ -117,10 +120,49 @@ export class Player extends Entity {
         super(x, y, 30, 30, COLORS.PLAYER, playerStats.maxHp, 4);
         this.mana = playerStats.maxMana;
         this.summonCooldown = 0;
+        this.isMoving = false;
+        this.isAttacking = false;
+        this.attackFrame = 0;
     }
 
     update(game) {
         const { dx, dy } = game.input.getAxis();
+
+        // Update Direction
+        this.isMoving = dx !== 0 || dy !== 0;
+        if (dx < 0) this.facingLeft = true;
+        if (dx > 0) this.facingLeft = false;
+
+        if (dy > 0) this.direction = 0; // Down
+        else if (dy < 0) this.direction = 2; // Up
+        else if (dx !== 0) this.direction = 1; // Side
+
+        // Update Animation Frame
+        if (this.isAttacking) {
+            this.frameTimer++;
+            if (this.frameTimer > 5) {
+                this.frameTimer = 0;
+                this.attackFrame++;
+                if (this.attackFrame >= 3) {
+                    this.isAttacking = false;
+                    this.attackFrame = 0;
+                }
+            }
+        } else if (this.isMoving) {
+            this.frameTimer++;
+            if (this.frameTimer > 8) {
+                this.frameTimer = 0;
+                this.frame = (this.frame + 1) % 4;
+            }
+        } else {
+            // Idle animation (row 0)
+            this.frameTimer++;
+            if (this.frameTimer > 15) {
+                this.frameTimer = 0;
+                this.frame = (this.frame + 1) % 4;
+            }
+        }
+
         this.move(dx, dy, game.walls);
 
         // Regen Mana
@@ -141,6 +183,8 @@ export class Player extends Entity {
         if (this.mana >= playerStats.minionCost && this.summonCooldown <= 0) {
             this.mana -= playerStats.minionCost;
             this.summonCooldown = 20;
+            this.isAttacking = true;
+            this.attackFrame = 0;
 
             const mx = this.rect.x + (Math.random() * 60 - 30);
             const my = this.rect.y + (Math.random() * 60 - 30);
@@ -150,6 +194,39 @@ export class Player extends Entity {
             game.spawnParticles(this.rect.x, this.rect.y, COLORS.MINION, 5);
         }
     }
+
+    draw(ctx, camera, game) {
+        const img = game?.assets?.characters;
+        if (!img) {
+            super.draw(ctx, camera);
+            return;
+        }
+
+        let row = 0; // Idle
+        let col = this.frame;
+
+        if (this.isAttacking) {
+            row = 4;
+            col = this.attackFrame;
+        } else if (this.isMoving) {
+            if (this.direction === 0) row = 1; // Down
+            else if (this.direction === 1) row = 2; // Right
+            else if (this.direction === 2) row = 3; // Up
+        } else {
+            row = 0; // Idle
+        }
+
+        const sx = col * TILE_SIZE;
+        const sy = row * TILE_SIZE;
+
+        // Center the 48x48 sprite on the 30x30 hitbox
+        // Offset: (48 - 30) / 2 = 9
+        const dx = this.rect.x - camera.x - 9;
+        const dy = this.rect.y - camera.y - 9;
+
+        this.drawSprite(ctx, img, sx, sy, dx, dy, 48, 48, this.facingLeft);
+        this.drawHealth(ctx, camera);
+    }
 }
 
 export class Minion extends Entity {
@@ -158,6 +235,8 @@ export class Minion extends Entity {
         this.owner = owner;
         this.target = null;
         this.attackCooldown = 0;
+        this.frame = 0;
+        this.frameTimer = 0;
     }
 
     update(game) {
@@ -181,10 +260,11 @@ export class Minion extends Entity {
             dx = Math.cos(angle);
             dy = Math.sin(angle);
 
+            this.facingLeft = dx < 0;
+
             // Attack
             if (closestDist < 30) {
                 if (this.attackCooldown <= 0) {
-                    // Use player's minion damage stat with variance
                     const variance = 0.8 + Math.random() * 0.4;
                     const damage = Math.floor(playerStats.minionDamage * variance);
                     this.target.hp -= damage;
@@ -199,11 +279,46 @@ export class Minion extends Entity {
                 let angle = Math.atan2(this.owner.rect.centerY - this.rect.centerY, this.owner.rect.centerX - this.rect.centerX);
                 dx = Math.cos(angle);
                 dy = Math.sin(angle);
+                this.facingLeft = dx < 0;
+            }
+        }
+
+        // Animate
+        if (dx !== 0 || dy !== 0) {
+            this.frameTimer++;
+            if (this.frameTimer > 10) {
+                this.frame = (this.frame + 1) % 4; // Using idle/walk logic
+                this.frameTimer = 0;
             }
         }
 
         this.move(dx, dy, game.walls);
         if (this.attackCooldown > 0) this.attackCooldown--;
+    }
+
+    draw(ctx, camera, game) {
+        const img = game?.assets?.characters;
+        if (!img) {
+            super.draw(ctx, camera);
+            return;
+        }
+
+        // Use Slime Sprite (Row 6, Col 0) tinted Blue
+        const sx = 0;
+        const sy = 6 * TILE_SIZE;
+
+        // Center 48x48 on 20x20
+        // Offset: (48 - 20) / 2 = 14
+        const dx = this.rect.x - camera.x - 14;
+        const dy = this.rect.y - camera.y - 14;
+
+        // Apply a filter for tinting if supported (ctx.filter)
+        ctx.save();
+        ctx.filter = "hue-rotate(180deg)"; // Turn Green to Blue-ish
+        this.drawSprite(ctx, img, sx, sy, dx, dy, 48, 48, this.facingLeft);
+        ctx.restore();
+
+        this.drawHealth(ctx, camera);
     }
 }
 
@@ -288,6 +403,8 @@ export class Enemy extends Entity {
             let dx = Math.cos(angle);
             let dy = Math.sin(angle);
 
+            this.facingLeft = dx < 0;
+
             // Ranged enemies keep distance
             if (this.type === 'ranged') {
                 if (closestDist > 120) {
@@ -322,6 +439,63 @@ export class Enemy extends Entity {
         }
         if (this.attackCooldown > 0) this.attackCooldown--;
     }
+
+    draw(ctx, camera, game) {
+        const img = game?.assets?.characters;
+        if (!img) {
+            super.draw(ctx, camera);
+            return;
+        }
+
+        let col = 0; // Default Slime
+        const row = 6;
+        let scale = 1.0;
+        let filter = "none";
+
+        switch(this.type) {
+            case 'normal':
+                col = 1; // Goblin
+                break;
+            case 'fast':
+                col = 0; // Slime
+                filter = "hue-rotate(45deg)"; // Different Slime
+                break;
+            case 'tank':
+                col = 2; // Skeleton
+                break;
+            case 'ranged':
+                col = 1; // Goblin
+                filter = "hue-rotate(90deg)"; // Purple Goblin
+                break;
+            case 'boss':
+                col = 2; // Skeleton
+                scale = 2.0; // Big Skeleton
+                filter = "sepia(1) saturate(5) hue-rotate(-50deg)"; // Red Skeleton
+                break;
+        }
+
+        const sx = col * TILE_SIZE;
+        const sy = row * TILE_SIZE;
+
+        // Center Logic
+        const drawSize = 48 * scale;
+        const offset = (drawSize - this.rect.w) / 2;
+        const dx = this.rect.x - camera.x - offset;
+        const dy = this.rect.y - camera.y - offset;
+
+        ctx.save();
+        if (filter !== "none") ctx.filter = filter;
+
+        if (this.facingLeft) {
+            ctx.scale(-1, 1);
+            ctx.drawImage(img, sx, sy, TILE_SIZE, TILE_SIZE, -dx - drawSize, dy, drawSize, drawSize);
+        } else {
+            ctx.drawImage(img, sx, sy, TILE_SIZE, TILE_SIZE, dx, dy, drawSize, drawSize);
+        }
+        ctx.restore();
+
+        this.drawHealth(ctx, camera);
+    }
 }
 
 export class Item {
@@ -336,32 +510,61 @@ export class Item {
                      COLORS.ARTIFACT;
     }
 
-    draw(ctx, camera) {
+    draw(ctx, camera, game) {
         if (this.picked) return;
 
-        const screenX = this.rect.x - camera.x;
-        const screenY = this.rect.y - camera.y;
+        const img = game?.assets?.characters;
+        if (!img) {
+            // Fallback
+            const screenX = this.rect.x - camera.x;
+            const screenY = this.rect.y - camera.y;
+            const size = 10;
+            const centerX = screenX + this.rect.w / 2;
+            const centerY = screenY + this.rect.h / 2;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - size);
+            ctx.lineTo(centerX + size, centerY);
+            ctx.lineTo(centerX, centerY + size);
+            ctx.lineTo(centerX - size, centerY);
+            ctx.closePath();
+            ctx.fill();
+            return;
+        }
 
-        const size = 10;
-        const centerX = screenX + this.rect.w / 2;
-        const centerY = screenY + this.rect.h / 2;
+        const row = 6;
+        let col = 3; // Potion
+        let filter = "none";
 
-        // Draw item as a glowing diamond
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY - size);
-        ctx.lineTo(centerX + size, centerY);
-        ctx.lineTo(centerX, centerY + size);
-        ctx.lineTo(centerX - size, centerY);
-        ctx.closePath();
-        ctx.fill();
+        switch(this.type) {
+            case 'health':
+                col = 3; // Red Potion
+                break;
+            case 'mana':
+                col = 3; // Potion
+                filter = "hue-rotate(240deg)"; // Blue Potion
+                break;
+            case 'equipment':
+                col = 5; // Chest
+                break;
+            case 'artifact':
+                col = 4; // Coin (Gold?) or Chest with filter
+                filter = "brightness(1.5)";
+                break;
+        }
 
-        // Glow effect
-        ctx.globalAlpha = 0.3 + Math.sin(Date.now() / 200) * 0.2;
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.globalAlpha = 1.0;
+        const sx = col * TILE_SIZE;
+        const sy = row * TILE_SIZE;
+
+        const drawSize = 32; // Smaller items
+        const offset = (drawSize - this.rect.w) / 2;
+        const dx = this.rect.x - camera.x - offset;
+        const dy = this.rect.y - camera.y - offset;
+
+        ctx.save();
+        if (filter !== "none") ctx.filter = filter;
+        ctx.drawImage(img, sx, sy, TILE_SIZE, TILE_SIZE, dx, dy, drawSize, drawSize);
+        ctx.restore();
     }
 
     pickup(player, game) {
